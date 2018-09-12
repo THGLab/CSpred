@@ -14,6 +14,8 @@ import sklearn.model_selection
 import keras
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from Bio.SeqUtils import IUPACData
+from lsuv_init import LSUVinit
 
 atom_names = ['HA', 'H', 'CA', 'CB', 'C', 'N']
 
@@ -37,7 +39,7 @@ test_data_df = pd.read_pickle(test_path)
 train_data = train_data_df.drop(['FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM'], axis=1)
 test_data = test_data_df.drop(['FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM'], axis=1)
 
-train_path2 = '/Users/kcbennett/Documents/Git_Collaborations_THG/shiftpred/shiftx2_train_df.pkl'
+train_path2 = '/Users/kcbennett/Documents/Git_Collaborations_THG/shiftpred/shiftx2_training_df.pkl'
 test_path2 = '/Users/kcbennett/Documents/Git_Collaborations_THG/shiftpred/shiftx2_test_df.pkl'
 train_df = pd.read_pickle(train_path2)
 test_df = pd.read_pickle(test_path2)
@@ -104,7 +106,7 @@ def sparta_model(data, atom, epochs, per, tol):
     return shifts_mean, shifts_std, val_list, hist_list, mod
 
 
-def deep_model(activ, arch, lrate, mom, dec, data, atom, min_epochs, max_epochs, per, tol, do, reg, pretrain=True, bnorm=False, dropout=False, nest=False, rcoil=False, rccs_feat=False):
+def deep_model(activ, arch, lrate, mom, dec, data, atom, min_epochs, max_epochs, per, tol, do, wreg=0, pretrain=True, bnorm=False, dropout=False, lsuv=False, nest=False, rcoil=False, rccs_feat=False):
     '''Constructs a model from the given features and shifts for
     the requested atom.  The model is trained for the given number
     of epochs with the loss being checked every per epochs.  Training
@@ -124,15 +126,18 @@ def deep_model(activ, arch, lrate, mom, dec, data, atom, min_epochs, max_epochs,
     
     # Build model
     mod = keras.models.Sequential()
-    mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=keras.regularizers.l1(reg)))
+    mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=keras.regularizers.l1(wreg)))
     for i in arch[1:]:
-        mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=keras.regularizers.l1(reg)))
+        mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=keras.regularizers.l1(wreg)))
         if bnorm:
             mod.add(keras.layers.BatchNormalization())
         if dropout:
             mod.add(keras.layers.Dropout(do))
     mod.add(keras.layers.Dense(units=1, activation='linear'))
     mod.compile(loss=lossf, optimizer=opt)
+    
+    if lsuv:
+        mod = LSUVinit(mod, feat_train[:64])
 
     # Initialize some outputs
     hist_list = []
@@ -167,11 +172,93 @@ def deep_model(activ, arch, lrate, mom, dec, data, atom, min_epochs, max_epochs,
     # Retrain model on full dataset for same number of epochs as was
     # needed to obtain min validation loss
     mod = keras.models.Sequential()
-    mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=keras.regularizers.l1(reg)))
+    mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=keras.regularizers.l1(wreg)))
     for i in arch[1:]:
-        mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=keras.regularizers.l1(reg)))
+        mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=keras.regularizers.l1(wreg)))
         if bnorm:
             mod.add(keras.layers.BatchNormalization())
+        if dropout:
+            mod.add(keras.layers.Dropout(do))
+    mod.add(keras.layers.Dense(units=1, activation='linear'))
+    mod.compile(loss=lossf, optimizer=opt)
+    mod.fit(feats, shift_norm, batch_size=64, epochs=val_epochs)
+
+    return shifts_mean, shifts_std, val_list, hist_list, mod
+
+
+def deep_model_prelu(arch, lrate, mom, dec, data, atom, min_epochs, max_epochs, per, tol, do, wreg, activ='linear', pretrain=True, bnorm=False, dropout=False, lsuv=False, nest=False, rcoil=False, rccs_feat=False):
+    '''Constructs a model from the given features and shifts for
+    the requested atom.  The model is trained for the given number
+    of epochs with the loss being checked every per epochs.  Training
+    stops when this loss increases by more than tol. The arch argument
+    is a list specifying the number of hidden units at each layer.'''
+    dat = data[data[atom].notnull()]
+    feats = dat.drop(atom_names, axis=1).values
+    shifts = dat[atom]
+    shifts_mean = shifts.mean()
+    shifts_std = shifts.std()
+    shift_norm = (shifts - shifts_mean) / shifts_std
+    shift_norm = shift_norm.values
+    feat_train, feat_val, shift_train, shift_val = skl.model_selection.train_test_split(feats, shift_norm, test_size=0.2)
+    dim_in = feats.shape[1]
+    
+    opt = keras.optimizers.SGD(lr=lrate, momentum=mom, decay=dec, nesterov=nest)
+    
+    # Build model
+    mod = keras.models.Sequential()
+    mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=keras.regularizers.l1(wreg)))
+    for i in arch[1:]:
+        mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=keras.regularizers.l1(wreg)))
+        if bnorm:
+            mod.add(keras.layers.BatchNormalization())
+        mod.add(keras.layers.advanced_activations.PReLU())
+        if dropout:
+            mod.add(keras.layers.Dropout(do))
+    mod.add(keras.layers.Dense(units=1, activation='linear'))
+    mod.compile(loss=lossf, optimizer=opt)
+    
+    if lsuv:
+        mod = LSUVinit(mod, feat_train[:64])
+
+    # Initialize some outputs
+    hist_list = []
+    val_list = []
+
+    # Train until the validation loss gets too far above the observed min
+    val_min = 10 ** 10
+    if pretrain:
+        for i in range(int(max_epochs/per)):
+            pt1 = mod.evaluate(feat_val, shift_val, verbose=0)
+            val_list.append(pt1)
+
+            if pt1 < val_min:
+                val_min = pt1
+
+            hist = mod.fit(feat_train, shift_train, batch_size=64, epochs=per)
+            hist_list += hist.history['loss']
+            pt2 = mod.evaluate(feat_val, shift_val, verbose=0)
+            delt1 = pt1 - val_min
+            delt2 = pt2 - val_min
+            print('The validation loss at round ' + str(i) + ' is ' + str(pt2))
+            if delt1 > tol and delt2 > tol:
+                print('Broke loop at round ' + str(i))
+                break
+            if pt2 is np.nan:
+                print('Broke loop because of NaN')
+                break
+        min_val_idx = min((val, idx) for (idx, val) in enumerate(val_list))[1]
+        val_epochs = max(min_val_idx * per, min_epochs)
+    else:
+        val_epochs = min_epochs
+    # Retrain model on full dataset for same number of epochs as was
+    # needed to obtain min validation loss
+    mod = keras.models.Sequential()
+    mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=keras.regularizers.l1(wreg)))
+    for i in arch[1:]:
+        mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=keras.regularizers.l1(wreg)))
+        if bnorm:
+            mod.add(keras.layers.BatchNormalization())
+        mod.add(keras.layers.advanced_activations.PReLU())
         if dropout:
             mod.add(keras.layers.Dropout(do))
     mod.add(keras.layers.Dense(units=1, activation='linear'))
@@ -422,12 +509,15 @@ camean, castd, caval_list, cahist_list, sparta_camod = sparta_model(train_data, 
 cbmean, cbstd, cbval_list, cbhist_list, sparta_cbmod = sparta_model(train_data, 'CB', 25000, 100, 10**-2)
 hamean, hastd, haval_list, hahist_list, sparta_hamod = sparta_model(train_data, 'HA', 25000, 100, 5*10**-3)
 
-cmean, cstd, redo_cval_list3, redo_deep_chist_list3, deep_mod1= deep_model('relu', [100, 60, 30], 0.01, 0.70, 5*10**-6, train_data, 'C', 50, 2000, 25, 10**-2, do=0.2, reg=0, pretrain=True, bnorm=True, dropout=True, nest=True)
+cmean, cstd, redo_cval_list3, redo_deep_chist_list3, deep_mod1= deep_model('relu', [100, 60, 30], 0.01, 0.70, 5*10**-6, train_data, 'C', 50, 2000, 25, 10**-2, do=0.2, wreg=0, pretrain=True, bnorm=True, dropout=True, nest=True, lsuv=True)
+cmean, cstd, redo_cval_list0, redo_deep_chist_list0, deep_mod0= deep_model_prelu([100, 60, 30], 0.01, 0.70, 5*10**-6, train_data, 'C', 50, 2000, 25, 10**-2, do=0.2, wreg=0, pretrain=True, bnorm=True, dropout=True, nest=True)
+cmean, cstd, redo_cval_list2, redo_deep_chist_list2, deep_mod2= deep_model_prelu([100, 60, 30], 0.01, 0.70, 5*10**-6, train_data, 'C', 50, 2000, 25, 10**-2, do=0.2, wreg=0, pretrain=True, bnorm=True, dropout=True, nest=True, lsuv=True)
+
 
 branch_arch = [[60, 50, 30], [60, 50, 30], 30]
 cmean, cstd, redo_cval_list3, redo_deep_chist_list3, branch_mod1 = branch_model('relu', branch_arch, 0.01, 0.70, 5*10**-6, train_data, 'C', 50, 2000, 25, 10**-2, do=0.2, reg=0, pretrain=True, bnorm=True, dropout=True, nest=True)
 
-c_error = np.sqrt(sparta_eval(cmean, cstd, test_data, sparta_cmod, 'C')) * cstd
+c_error = np.sqrt(sparta_eval(cmean, cstd, test_data, deep_mod1, 'C')) * cstd
 h_error = np.sqrt(sparta_eval(hmean, hstd, test_data, sparta_hmod, 'H')) * hstd
 n_error = np.sqrt(sparta_eval(nmean, nstd, test_data, sparta_nmod, 'N')) * nstd
 ca_error = np.sqrt(sparta_eval(camean, castd, test_data, sparta_camod, 'CA')) * castd
