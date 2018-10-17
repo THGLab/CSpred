@@ -1432,8 +1432,7 @@ def lstm_eval(mean, std, data, model, atom, window=10, randomize=False):
 
 
 # Need to write a function that does k-fold cross-validation 
-# NOTE - Need to adapt this function to work on lstm models also
-def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, out='Summary'):
+def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, out='Summary', lstm=False, window=10):
     '''Function to perform k-fold cross validation on a given model with fixed
     hyper-parameters.
     
@@ -1444,17 +1443,40 @@ def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, out='Summa
     model = Function that takes data and returns a trained model (Function)
     mod_args = List of arguments for model-generating function (List)
     mod_kwargs = Dictionary of keyword arguments for model-generating function (Dict)
+    lstm = Assume model takes data like an lstm (by chain) rather than by residue (Bool)
+    
     '''
-    kf = skl.model_selection.KFold(n_splits=k)
     test_rmsd_list = np.array([])
     train_rmsd_list = np.array([])
-    for train_index, test_index in kf.split(data):
-        train_df, test_df = data.iloc[train_index], data.iloc[test_index]
-        mean, std, val_list, history, mod = model(train_df, atom, *mod_args, **mod_kwargs)
-        test_rmsd = feval(mean, std, test_df, mod, atom)
-        test_rmsd_list = np.append(test_rmsd_list, test_rmsd)
-        train_rmsd = feval(mean, std, train_df, mod, atom)
-        train_rmsd_list = np.append(train_rmsd_list, train_rmsd)
+    if lstm:
+        idxs = sep_by_chains(data, atom)
+        kf = skl.model_selection.KFold(n_splits=k)
+        test_rmsd_list = np.array([])
+        train_rmsd_list = np.array([])
+        for train_selector, test_selector in kf.split(idxs):
+            train_idxs, test_idxs = np.take(idxs, train_selector), np.take(idxs, test_selector)
+            full_train_idx, full_test_idx = train_idxs[0], test_idxs[0]
+            for new_idx in train_idxs[1:]:
+                full_train_idx = full_train_idx.append(new_idx)
+            for new_idx in test_idxs[1:]:
+                full_test_idx = full_test_idx.append(new_idx)
+            traindf, testdf = data.iloc[full_train_idx], data.iloc[full_test_idx]
+            mean, std, val_list, history, param_list, mod = model(traindf, atom, **mod_kwargs)
+            test_rmsd = feval(mean, std, testdf, mod, atom, window=window)
+            train_rmsd = feval(mean, std, traindf, mod, atom, window=window)
+            test_rmsd_list = np.append(test_rmsd_list, test_rmsd)
+            train_rmsd_list = np.append(train_rmsd_list, train_rmsd)
+    
+    else:        
+        kf = skl.model_selection.KFold(n_splits=k)
+        for train_index, test_index in kf.split(data):
+            train_df, test_df = data.iloc[train_index], data.iloc[test_index]
+            mean, std, val_list, history, mod = model(train_df, atom, *mod_args, **mod_kwargs)
+            test_rmsd = feval(mean, std, test_df, mod, atom)
+            test_rmsd_list = np.append(test_rmsd_list, test_rmsd)
+            train_rmsd = feval(mean, std, train_df, mod, atom)
+            train_rmsd_list = np.append(train_rmsd_list, train_rmsd)
+
     train_rmsd = train_rmsd_list.mean()
     train_rmsd_spread = train_rmsd_list.std()
     test_rmsd = test_rmsd_list.mean()
@@ -1463,6 +1485,7 @@ def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, out='Summa
         return train_rmsd, test_rmsd, train_rmsd_spread, test_rmsd_spread
     if out=='full':
         return train_rmsd_list, test_rmsd_list
+        
         
 # We can check that this works
 mod_args = [[100, 60, 30], 0.01, 0.70, 5*10**-6, 100, 2000, 25, 10**-2]
