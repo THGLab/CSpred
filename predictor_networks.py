@@ -1427,7 +1427,7 @@ def lstm_eval(mean, std, data, model, atom, window=10, randomize=False):
         if np.array_equal(weights, np.zeros_like(weights)):
             count += 1
     steps = len(idxs) - count
-    err = np.sqrt(at_mod.evaluate_generator(gen, steps=steps)) * std
+    err = np.sqrt(model.evaluate_generator(gen, steps=steps)) * std
     return err
 
 
