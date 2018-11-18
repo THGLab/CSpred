@@ -5,24 +5,11 @@ Created on Tue Mar  6 11:51:30 2018
 
 @author: bennett
 """
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Mar  6 11:51:30 2018
 
-@author: bennett
-"""
-
-import pandas as pd
 import numpy as np
-import math
 import random
 import sklearn as skl
-import sklearn.model_selection
 import keras
-import itertools
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 from Bio.SeqUtils import IUPACData
 from lsuv_init import LSUVinit
 
@@ -47,6 +34,10 @@ rcoil_cols = ['RCOIL_' + atom for atom in atom_names]
 ring_cols = [atom + '_RC' for atom in atom_names]
 all_cols = struc_cols + seq_cols + rcoil_cols + ring_cols
 all_cols_bin = struc_cols + bin_seq_cols + rcoil_cols + ring_cols
+sparta_ring_cols = [atom + '_RING' for atom in atom_names]
+sparta_rcoil_cols = [atom + '_RAND_COIL' for atom in atom_names]
+sparta_rename_cols = sparta_ring_cols + sparta_rcoil_cols
+sparta_rename_map = dict(zip(sparta_rename_cols, ring_cols + rcoil_cols))
 
 # Define the names for the _i+1 and _i-1 columns to allow dropping them for RNNs
 im1_cols = ['PSI_'+i for i in ['COS_i-1', 'SIN_i-1']]
@@ -64,111 +55,21 @@ ip1_cols += ['BLOSUM62_NUM_'+list(IUPACData.protein_letters_3to1.keys())[i].uppe
 im1_cols_bin += ['BINSEQREP_'+ list(IUPACData.protein_letters_3to1.keys())[i].upper() + '_i-1' for i in range(20)]
 ip1_cols_bin += ['BINSEQREP_'+ list(IUPACData.protein_letters_3to1.keys())[i].upper() + '_i+1' for i in range(20)]
 
-# Load data
-train_path = '/home/bennett/Documents/Git_Collaborations_THG/office_home/training_data.pkl'
-test_path = '/home/bennett/Documents/Git_Collaborations_THG/office_home/test_data.pkl'
-train_data_df = pd.read_pickle(train_path)
-test_data_df = pd.read_pickle(test_path)
-train_data = train_data_df.drop(['FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM'], axis=1)
-test_data = test_data_df.drop(['FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM'], axis=1)
-
-train_path2 = '/Users/kcbennett/Documents/Git_Collaborations_THG/shiftpred/shiftx2_training_df.pkl'
-test_path2 = '/Users/kcbennett/Documents/Git_Collaborations_THG/shiftpred/shiftx2_test_df.pkl'
-train_df = pd.read_pickle(train_path2)
-test_df = pd.read_pickle(test_path2)
-train_data = train_df.drop(['FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM'], axis=1)
-test_data = test_df.drop(['FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM'], axis=1)
-
-# Load new clean_bmrb data
-clean_bmrb_traindf = pd.read_csv('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/train_bmrb_clean.csv')
-clean_bmrb_testdf = pd.read_csv('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/test_bmrb_clean.csv')
-clean_bmrb_traindf = pd.read_csv('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/train_shiftx2_clean_rings.csv')
-clean_bmrb_testdf = pd.read_csv('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/test_shiftx2_clean_rings.csv')
-clean_bmrb_traindf = pd.read_csv('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/train_shiftx2_clean_rings.csv')
-clean_bmrb_testdf = pd.read_csv('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings//test_shiftx2_clean_rings.csv')
-
-# Change blosum to binary sequence representation
-bin_clean_bmrb_traindf = blosum_to_binary(clean_bmrb_traindf)
-bin_clean_bmrb_testdf = blosum_to_binary(clean_bmrb_testdf)
-bin_clean_bmrb_traindf_data = bin_clean_bmrb_traindf.drop(['FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
-bin_clean_bmrb_testdf_data = bin_clean_bmrb_testdf.drop(['FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
-# Normalize bmrb data without adding rcoil and ring columns
-mean_train, std_train, clean_bmrb_traindf_white = whitener(all_cols, clean_bmrb_traindf_data)
-clean_bmrb_testdf_white = clean_bmrb_testdf_data.copy()
-clean_bmrb_testdf_white[all_cols] = (clean_bmrb_testdf_data[all_cols] - mean_train) / std_train
-mean_bin, std_bin, bin_clean_bmrb_traindf_white = whitener(struc_cols, bin_clean_bmrb_traindf_data)
-bin_clean_bmrb_testdf_white = bin_clean_bmrb_testdf_data.copy()
-bin_clean_bmrb_testdf_white = (bin_clean_bmrb_testdf_data[struc_cols] - mean_bin) / std_bin
-
-# The following is to prepare a bunch of diferent DataFrames depending on normalization, sequence representation, differencing rcoils, etc
-traindf_fcoils = add_rand_coils(clean_bmrb_traindf)
-testdf_fcoils = add_rand_coils(clean_bmrb_testdf)
-traindf_bin_fcoils = blosum_to_binary(traindf_fcoils)
-testdf_bin_fcoils = blosum_to_binary(testdf_fcoils)
-clean_bmrb_traindf_data = clean_bmrb_traindf.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
-clean_bmrb_testdf_data = clean_bmrb_testdf.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
-combined_clean_bmrb = pd.concat([clean_bmrb_traindf, clean_bmrb_testdf], ignore_index=True)
-combined_clean_bmrb_data = pd.concat([clean_bmrb_traindf_data, clean_bmrb_testdf_data], ignore_index=True)
-traindf_fcoils_data = traindf_fcoils.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
-traindf_bin_fcoils_data = traindf_bin_fcoils.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
-testdf_bin_fcoils_data = testdf_bin_fcoils.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
-testdf_fcoils_data = testdf_fcoils.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
-fcoil_means, fcoil_stds, traindf_fcoils_normdata = whitener(all_cols, traindf_fcoils_data)
-_, _, testdf_fcoils_normdata = whitener(all_cols, testdf_fcoils_data, means=fcoil_means, stds=fcoil_stds, test_data=True)
-bin_fcoil_means, bin_fcoil_stds, traindf_bin_fcoils_normdata = whitener(struc_cols+ring_cols+rcoil_cols, traindf_bin_fcoils_data)
-_, _, testdf_bin_fcoils_normdata = whitener(struc_cols+ring_cols+rcoil_cols, testdf_bin_fcoils_data, means=bin_fcoil_means, stds=bin_fcoil_stds, test_data=True)
-traindf_coildiff = diff_targets(traindf_fcoils, rings=False, coils=True)
-testdf_coildiff = diff_targets(testdf_fcoils, rings=False, coils=True)
-coildiff_means, coildiff_stds, traindf_coildiff_norm = whitener(struc_cols + seq_cols + ring_cols, traindf_coildiff)
-_, _, testdf_coildiff_norm = whitener(struc_cols + seq_cols + ring_cols, testdf_coildiff, means=coildiff_means, stds=coildiff_stds, test_data=True)
-traindf_bin_coildiff = diff_targets(traindf_bin_fcoils, rings=False, coils=True)
-testdf_bin_coildiff = diff_targets(testdf_bin_fcoils, rings=False, coils=True)
-traindf_coildiff_data = diff_targets(traindf_fcoils_data, rings=False, coils=True)
-testdf_coildiff_data = diff_targets(testdf_fcoils_data, rings=False, coils=True)
-cdiff_means, cdiff_stds, traindf_coildiff_normdata = whitener(struc_cols+seq_cols+ring_cols, traindf_coildiff_data)
-_, _, testdf_coildiff_normdata = whitener(struc_cols+seq_cols+ring_cols, testdf_coildiff_data, means=cdiff_means, stds=cdiff_stds, test_data=True)
-traindf_bin_coildiff_data = diff_targets(traindf_bin_fcoils_data, rings=False, coils=True)
-testdf_bin_coildiff_data = diff_targets(testdf_bin_fcoils_data, rings=False, coils=True)
-bin_cdiff_means, bin_cdiff_stds, traindf_bin_coildiff_normdata = whitener(struc_cols+ring_cols, traindf_bin_coildiff_data)
-_, _, testdf_bin_coildiff_normdata = whitener(struc_cols+ring_cols, testdf_bin_coildiff_data, means=bin_cdiff_means, stds=bin_cdiff_stds, test_data=True)
-
-# Can make lists of train and test DataFrames
-traindfs = [traindf_fcoils_normdata, traindf_bin_fcoils_data, traindf_bin_fcoils_normdata, traindf_coildiff_data, traindf_coildiff_normdata, traindf_bin_coildiff_data, traindf_bin_coildiff_normdata]
-testdfs = [testdf_fcoils_normdata, testdf_bin_fcoils_data, testdf_bin_fcoils_normdata, testdf_coildiff_data, testdf_coildiff_normdata, testdf_bin_coildiff_data, testdf_bin_coildiff_normdata]
-
-# Can pickle DataFrames so we don't have to rebuild anything
-traindf_fcoils_data.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/traindf_fcoils_data.pkl')
-traindf_fcoils_normdata.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/traindf_fcoils_normdata.pkl')
-traindf_bin_fcoils_data.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/traindf_bin_fcoils_data.pkl')
-traindf_bin_fcoils_normdata.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/traindf_bin_fcoils_normdata.pkl')
-traindf_coildiff_data.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/traindf_coildiff_data.pkl')
-traindf_coildiff_normdata.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/traindf_coildiff_normdata.pkl')
-traindf_bin_coildiff_data.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/traindf_bin_coildiff_data.pkl')
-traindf_bin_coildiff_normdata.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/traindf_bin_coildiff_normdata.pkl')
-
-testdf_fcoils_data.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/testdf_fcoils_data.pkl')
-testdf_fcoils_normdata.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/testdf_fcoils_normdata.pkl')
-testdf_bin_fcoils_data.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/testdf_bin_fcoils_data.pkl')
-testdf_bin_fcoils_normdata.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/testdf_bin_fcoils_normdata.pkl')
-testdf_coildiff_data.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/testdf_coildiff_data.pkl')
-testdf_coildiff_normdata.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/testdf_coildiff_normdata.pkl')
-testdf_bin_coildiff_data.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/testdf_bin_coildiff_data.pkl')
-testdf_bin_coildiff_normdata.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/testdf_bin_coildiff_normdata.pkl')
-
-# Need to prepare some DataFrames for RNNs that drop the _i-1 and _i+1 columns
-reslevel_traindf = traindf_bin_coildiff.drop(im1_cols_bin + ip1_cols_bin, axis=1)
-reslevel_testdf = testdf_bin_coildiff.drop(im1_cols_bin + ip1_cols_bin, axis=1)
-restraindf_coildiff_norm = traindf_coildiff_norm.drop(im1_cols + ip1_cols, axis=1)
-restestdf_coildiff_norm = testdf_coildiff_norm.drop(im1_cols + ip1_cols, axis=1)
-
-# Can read in pickled data
-bin_rcoil_diff_traindf_normdata = pd.read_pickle('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/bin_rcoil_diff_traindf_normdata.pkl')
-bin_rcoil_diff_testdf_normdata = pd.read_pickle('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/bin_rcoil_diff_testdf_normdata.pkl')
-
-lossf = 'mean_squared_error'
-
 
 # We begin with some data processing functions
+def featsq(data, columns):
+    '''Function to square the given columns from the data and store the results in new columns
+    
+    data = Contains the data to be squared (Pandas DataFrame)
+    columns = The names of the columns to be squared (List of Str)
+    '''
+    dat = data.copy()
+    for col in columns:
+        sq_col_name = col + '_sq'
+        dat[sq_col_name] = dat[col] ** 2
+    return dat
+
+
 # Let's write a whitener function to whiten whatever columns are specified
 def whitener(columns, data, means=None, stds=None, full=False, test_data=False):
     '''Function to standardize (whiten) the specified columns of the given DataFrame.
@@ -197,51 +98,6 @@ def whitener(columns, data, means=None, stds=None, full=False, test_data=False):
         mean = 0
         std = 1
     return mean, std, df
-
-
-# Now let's write a couple functions to do variable importance testing.
-# First, we'll write an ablater function that runs k-fold cross validation
-# on the data with given feature(s) removed.
-def varimportance_ablater(feats, k, data, atom, feval, model, mod_args, mod_kwargs):
-    '''Function to remove (ablate) specified feature(s) from the data and then perform
-    k-fold cross validation with a given set of hyper-parameters.  Measures reliance of
-    the entire algorithm (including learning process) on the ablated features by comparing
-    to performance on full data
-    
-    feats = Names of columns (features) to be ablated (List)
-    k = Number of folds for the cross validation (Int)
-    data = Features and targets (Pandas DataFrame)
-    atom = Name of atom for which to predict shifts (Str)
-    feval = Function to evaluate rmsd for the model (Function)
-    model = Function that takes data and returns a trained model (Function)
-    mod_args = List of arguments for model-generating function (List)
-    mod_kwargs = Dictionary of keyword arguments for model-generating function (Dict)
-    '''
-    df = data.copy()
-    df = df.drop(feats, axis=1)
-    train_rmsd, test_rmsd, train_rmsd_spread, test_rmsd_spread = kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs)
-    return train_rmsd, test_rmsd, train_rmsd_spread, test_rmsd_spread
-
-
-# Next we'll write a function that scrambles the values for specified feature(s) and then 
-# evaluates the performance of a given model 
-def varimportance_shuffler(feats, data, feval, mean, std, mod, atom):
-    '''Function to test the reliance of a given model on specified feature(s).  It
-    does this by shuffling the values in the data columns associated with the given 
-    feature(s) and then evaluating the performance of the model on this shuffled data
-    
-    feats = Feature(s) to be shuffled (List)
-    data = Data consisting of features and targets (Pandas DataFrame)
-    feval = Function to evaluate the rmsd (Function)
-    mean = Mean of the shifts to be predicted (Float)
-    std = Standard deviation of the shifts to be predicted (Float)
-    mod = A trained model (Keras Model)
-    atom = Name of atom for which to predict shifts (Str)
-    '''
-    for feat in feats:
-        data[feat] = np.random.permutation(data[feat])
-    err = feval(mean, std, data, mod, atom)
-    return err
 
 
 # Need a function to convert sequential information from Blosum to binary representation    
@@ -452,7 +308,7 @@ def sep_by_chains(data, atom=None, split=None):
         return train_list, val_list
             
 
-def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), rings=True, rcoil=False, sample_weights=True, randomize=False):
+def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), sample_weights=True, randomize=False, rolling=True, center_only=True):
     '''Takes full DataFrame of all train and validation chains
     along with a list of index lists for the various chains to be batched
     and the window (length of sub-samples).
@@ -468,9 +324,19 @@ def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), rings=Tr
                      timesteps (sequence entries) except 0's for timesteps with no shift data (NumpyArray)
     randomize = Return batches with order of subsequences randomized - to test if state information 
                 between subsequences is being (usefully) implemented (Bool)
+    rolling = Use rolling windows as opposed to non-overlapping windows for subsequences (Bool)
+    center_only = predict only the central residue for rolling windows (Bool)
     '''
     dat = data.copy()
-    dat.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1, inplace=True)
+    
+    try:
+        dat = dat.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
+    except ValueError:
+        pass
+    try:
+        dat = dat.drop(['RESNAME_ip1', 'RESNAME_im1'], axis=1)
+    except ValueError:
+        pass
     
     if norm_shifts:
         #all_shifts = dat[atom].fillna(0)
@@ -483,9 +349,6 @@ def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), rings=Tr
         # Need to go through list of chains in order
         for i, chain_idxs in enumerate(idxs):
             chain = dat.iloc[chain_idxs]
-            weights = chain[atom].notnull()
-            weights *= 1
-            weights = weights.values
             l = len(chain)
             shifts = chain[atom]
             feats = chain.drop(atom_names, axis=1)
@@ -503,58 +366,140 @@ def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), rings=Tr
             
             # Need to drop the random coil and ring current columns for the other atoms if 
             # such columns are in the data.
-            if rings:
+            try:
                 ring_col = atom + '_RC'
                 rem1 = ring_cols.copy()
                 rem1.remove(ring_col)
                 feats = feats.drop(rem1, axis=1)
                 feats[ring_col] = feats[ring_col].fillna(value=0)
-            if rcoil:
+            except KeyError:
+                pass
+            except ValueError:
+                pass
+            try:
                 rcoil_col = 'RCOIL_' + atom
                 rem2 = rcoil_cols.copy()
                 rem2.remove(rcoil_col)
                 feats = feats.drop(rem2, axis=1)
+            except ValueError:
+                pass
+            
             feats = feats.values
             num_feats = feats.shape[1]
             
-            # Find the number of sub-sequences in this batch
-            remainder = l % window
-            if remainder == 0:
-                n = l // window
-                even = True # Just in case needed for some future purpose
-            else:
-                n = l // window + 1
-                even = False
-                # Fill out arrays to full size
-                # full_size = n * window  # NOT NEEDED
-                padding = window - remainder
-                shift_norm = np.pad(shift_norm, (0, padding), mode='constant')
-                feats = np.pad(feats, ((0, padding), (0, 0)), mode='constant')
-                weights = np.pad(weights, (0, padding), mode='constant')
+            # Get weights as residues with non-null chemical shifts
+            if sample_weights:
+                weights = chain[atom].notnull()
+                weights *= 1
+                weights = weights.values
             
-            # Reshape into subsequences for batch
-            shift_norm = shift_norm.reshape((n, window, 1))
-            feats = feats.reshape((n, window, num_feats))
-            weights = weights.reshape((n, window))
-            if np.array_equal(weights, np.zeros_like(weights)):
-                pass
-            else:
-                if sample_weights:
-                    if randomize:
-                        np.random.seed(1)
-                        np.random.shuffle(shift_norm)
-                        np.random.seed(1)
-                        np.random.shuffle(feats)
-                        np.random.seed(1)
-                        np.random.shuffle(weights)
-                        yield feats, shift_norm, weights
-                    else:
-                        yield feats, shift_norm, weights
+            if rolling:
+                if window > l:
+                    raise ValueError('Window is larger than chain length.  Padding not implemented for rolling sub-sequences.')
+                # Implement rolling sub-sequences
+                # Make sure that window is odd if only predicting the central residue
+                if center_only:
+                    if window % 2 is 0:
+                        window += 1
+                # Initialize outputs
+                #print('Confirming window is ' + str(window))
+                rolling_feats = np.zeros((l, window, num_feats))
+                rolling_shifts = np.zeros((l, window))
+                rolling_weights = np.zeros_like(rolling_shifts)
+                #shape1 = rolling_shifts[4, :].shape
+                #shape2 = shift_norm[4 : 4 + window].shape
+                #print('shapes are ' + str(shape1) + ' and ' + str(shape2))
+                #print('full shift shape is ' + str(rolling_shifts.shape))
+                
+                if sample_weights and center_only:
+                    for i in range(l):
+                        flank_length = (window - 1) // 2
+                        if i in range(flank_length):
+                            # Handle special case of first flank_length number of sub-sequences
+                            rolling_weights[i, i] = 1
+                            rolling_weights[i, :] = rolling_weights[i, :] * weights[: window]
+                            rolling_shifts[i, :] = shift_norm[: window]
+                            rolling_feats[i, :, :] = feats[: window, :]
+                            #print('Ran first set')
+                        elif i in range(l - flank_length, l):
+                            # Handle special case of last flank_length number of sub-sequences
+                            rolling_weights[i, window - l + i] = 1
+                            rolling_weights[i, :] = rolling_weights[i, :] * weights[l - window :]
+                            rolling_shifts[i, :] = shift_norm[l - window :]
+                            rolling_feats[i, :, :] = feats[l - window :, :]
+                            #print('Ran last set')
+                        else:
+                            # Handle all sub-sequences in the main body of the chain
+                            rolling_weights[i, flank_length] = 1
+                            #shape1 = rolling_shifts[i, :].shape
+                            #shape2 = shift_norm[i - flank_length : i - flank_length + window].shape
+                            #print('shapes are ' + str(shape1) + ' and ' + str(shape2) + ' and i is ' + str(i))
+                            rolling_shifts[i, :] = shift_norm[i - flank_length : i - flank_length + window]
+                            rolling_feats[i, :, :] = feats[i - flank_length: i - flank_length + window, :]
+                            rolling_weights[i, :] = rolling_weights[i, :] * weights[i - flank_length : i - flank_length + window]
+                elif sample_weights and not center_only:
+                    for i in range(l - window + 1):
+                        rolling_weights[i, :] = weights[i : i + window]
+                        rolling_shifts[i, :] = shift_norm[i : i + window]
+                        rolling_feats[i, :, :] = feats[i : i + window, :]
+                
+                rolling_shifts = rolling_shifts.reshape((l, window, 1))
+                # If all weights are zero then pass to avoid NaN loss
+                if np.array_equal(rolling_weights, np.zeros_like(rolling_weights)):
+                    pass
                 else:
-                    yield feats, shift_norm
+                    if sample_weights:
+                        if randomize:
+                            np.random.seed(1)
+                            np.random.shuffle(rolling_shifts)
+                            np.random.seed(1)
+                            np.random.shuffle(rolling_feats)
+                            np.random.seed(1)
+                            np.random.shuffle(rolling_weights)
+                            yield rolling_feats, rolling_shifts, rolling_weights
+                        else:
+                            yield rolling_feats, rolling_shifts, rolling_weights
+                    else:
+                        yield rolling_feats, rolling_shifts
+                
+            elif not rolling:
+                # Implement non-overlapping sub-sequences
+                # Find the number of sub-sequences in this batch
+                remainder = l % window
+                if remainder == 0:
+                    n = l // window
+                else:
+                    n = l // window + 1
+                    # Fill out arrays to full size
+                    padding = window - remainder
+                    shift_norm = np.pad(shift_norm, (0, padding), mode='constant')
+                    feats = np.pad(feats, ((0, padding), (0, 0)), mode='constant')
+                    weights = np.pad(weights, (0, padding), mode='constant')
+                
+                # Reshape into subsequences for batch
+                shift_norm = shift_norm.reshape((n, window, 1))
+                feats = feats.reshape((n, window, num_feats))
+                weights = weights.reshape((n, window))
+                # If all weights are zero then pass to avoid NaN loss
+                if np.array_equal(weights, np.zeros_like(weights)):
+                    pass
+                else:
+                    if sample_weights:
+                        if randomize:
+                            np.random.seed(1)
+                            np.random.shuffle(shift_norm)
+                            np.random.seed(1)
+                            np.random.shuffle(feats)
+                            np.random.seed(1)
+                            np.random.shuffle(weights)
+                            yield feats, shift_norm, weights
+                        else:
+                            yield feats, shift_norm, weights
+                    else:
+                        yield feats, shift_norm
 
 
-def sparta_model(data, atom, epochs, per=5, tol=1.0, pretrain=None, rings=False, rcoil=False):
+def sparta_model(data, atom, epochs, per=5, tol=1.0, pretrain=None):
     '''Constructs a model from the given features and shifts for
     the requested atom.  The model is trained for the given number
     of epochs with the loss being checked every per epochs.  Training
@@ -580,17 +525,23 @@ def sparta_model(data, atom, epochs, per=5, tol=1.0, pretrain=None, rings=False,
     shift_norm = (shifts - shifts_mean) / shifts_std
     shift_norm = shift_norm.values
     
-    if rings:
+    try:
         ring_col = atom + '_RC'
         rem1 = ring_cols.copy()
         rem1.remove(ring_col)
         feats = feats.drop(rem1, axis=1)
         feats[ring_col] = feats[ring_col].fillna(value=0)
-    if rcoil:
+    except KeyError:
+        pass
+    except ValueError:
+        pass
+    try:
         rcoil_col = 'RCOIL_' + atom
         rem2 = rcoil_cols.copy()
         rem2.remove(rcoil_col)
         feats = feats.drop(rem2, axis=1)
+    except ValueError:
+        pass
 
     feats = feats.values
     feat_train, feat_val, shift_train, shift_val = skl.model_selection.train_test_split(feats, shift_norm, test_size=0.2)
@@ -601,6 +552,8 @@ def sparta_model(data, atom, epochs, per=5, tol=1.0, pretrain=None, rings=False,
     mod.add(keras.layers.Dense(units=30, activation='tanh', input_dim=dim_in))
     mod.add(keras.layers.Dense(units=1, activation='linear'))
     mod.compile(loss='mean_squared_error', optimizer='sgd')
+    
+    weights = mod.get_weights()
 
     # Initialize some outputs
     hist_list = []
@@ -662,6 +615,7 @@ def sparta_model(data, atom, epochs, per=5, tol=1.0, pretrain=None, rings=False,
 
     # Retrain model on full dataset for same number of epochs as was
     # needed to obtain min validation loss
+    mod.set_weights(weights)
     mod = keras.models.Sequential()
     mod.add(keras.layers.Dense(units=30, activation='tanh', input_dim=dim_in))
     mod.add(keras.layers.Dense(units=1, activation='linear'))
@@ -671,7 +625,8 @@ def sparta_model(data, atom, epochs, per=5, tol=1.0, pretrain=None, rings=False,
     return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
 
 
-def deep_model(data, atom, activ, arch, lrate, mom, dec, max_epochs, min_epochs=1, per=5, tol=1.0, do=0, wreg=0, norm_shifts=True, pretrain=None, bnorm=False, lsuv=False, nest=False, rcoil=False, rings=False):
+def deep_model(data, atom, arch, activ='prelu', lrate=0.001, mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None,
+                   pretrain=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0.0, clip_norm=0.0, reject_outliers=None):
     '''Constructs a model from the given features and shifts for
     the requested atom.  The model is trained for the given number
     of epochs with the loss being checked every per epochs.  Training
@@ -680,27 +635,49 @@ def deep_model(data, atom, activ, arch, lrate, mom, dec, max_epochs, min_epochs=
     
     data = Feature and target data (Pandas DataFrame)
     atom = Name of atom to predict (Str)
-    activ = Activation function (Str)
     arch = List of the number of neurons per layer (List)
+    activ = Activation function to use (Str - prelu, relu, tanh, etc.)
     lrate = Learning rate for SGD (Float)
     mom = Momentum for SGD (Float)
     dec = Decay for SGD learning rate (Float)
+    epochs = Maximum number of epochs to train (Int)
     min_epochs = Minimum number of epochs to train (Int)
-    max_epochs = Maximum number of epochs to train (Int)
     per = Number of epochs in a test strip for pretraining (Int)
     tol = Pretraining parameter (Float)
+    opt_type = Optimization procedure to use (Str - sgd, rmsprop, adam, etc.)
     do = Dropout percentage between 0 and 1 (Float)
-    wreg = Parameter for L1 regularization of dense layers (Float)
-    activ = activation for dense layers before prelu layers (should probably always be linear if prelu layers are present)
+    drop_last_only = Apply dropout only at last layer (Bool)
+    reg = Parameter for weight regularization of dense layers (Float)
+    reg_type = Type of weight regularization to use (Str - L1 or L2)
     pretrain = Whether or not and how to do pretraining.  Accepts None, GL, PQ, or UP (Str)
     bnorm = Use batch normalization (Bool)
     lsuv = Use layer-wise sequential unit variance initialization (Bool)
     nest = Use Nesterov momentum (Bool)
-    rings = DataFrame contains ring-current columns (Bool)
-    rcoil = DataFrame contains random-coil columns (Bool)
-    norm_shifts = Normalize the target shifts rather than using raw values (Bool)    
+    norm_shifts = Normalize the target shifts rather than using raw values (Bool)
+    opt_override = Override default parameters for optimization (Bool)
+    clip_val = Clip values parameter for optimizer (Float)
+    clip_norm = Clip norm parameter for optimizer (Float)
+    reject_outliers = Eliminate entries for which the targets differ by more than this number of standard deviations (Float or None)
     '''
+
     dat = data[data[atom].notnull()]
+    try:
+        dat = dat.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
+    except ValueError:
+        pass
+    try:
+        dat = dat.drop(['RESNAME_ip1', 'RESNAME_im1'], axis=1)
+    except ValueError:
+        pass
+
+    if reject_outliers is not None:
+        n_sig = max(reject_outliers, 0.1) # Don't accept a cutoff less than 0.1 * std
+        rej_mean = dat[atom].mean()
+        rej_std = dat[atom].std()
+        up_rej = rej_mean + n_sig * rej_std
+        low_rej = rej_mean - n_sig * rej_std
+        dat = dat[(dat[atom] > low_rej) & (dat[atom] < up_rej)]
+
     feats = dat.drop(atom_names, axis=1)
     shifts = dat[atom]
     
@@ -718,17 +695,23 @@ def deep_model(data, atom, activ, arch, lrate, mom, dec, max_epochs, min_epochs=
     
     # Need to drop the random coil and ring current columns for the other atoms if 
     # such columns are in the data.
-    if rings:
+    try:
         ring_col = atom + '_RC'
         rem1 = ring_cols.copy()
         rem1.remove(ring_col)
         feats = feats.drop(rem1, axis=1)
         feats[ring_col] = feats[ring_col].fillna(value=0)
-    if rcoil:
+    except KeyError:
+        pass
+    except ValueError:
+        pass
+    try:
         rcoil_col = 'RCOIL_' + atom
         rem2 = rcoil_cols.copy()
         rem2.remove(rcoil_col)
         feats = feats.drop(rem2, axis=1)
+    except ValueError:
+        pass
     
 # The following is an alternative way to include the rcoil shifts rather than simply normalizing
 # those columns.  This is probably equivalent since the rcoil and raw shifts are similarly 
@@ -743,31 +726,112 @@ def deep_model(data, atom, activ, arch, lrate, mom, dec, max_epochs, min_epochs=
     dim_in = feats.shape[1]
 
     
-    opt = keras.optimizers.SGD(lr=lrate, momentum=mom, decay=dec, nesterov=nest)
-    
-    if do == 0:
-        dropout = False
+    if do > 0 and not drop_last_only:
+        dropout = True
     else:
-        dropout=True
-        
+        dropout = False
+
+    # Define optimization procedure
+    if opt_type is 'sgd':
+        if opt_override:
+            opt = keras.optimizers.SGD(lr=lrate, momentum=mom, decay=dec, nesterov=nest, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.SGD()
+    elif opt_type is 'rmsprop':
+        if opt_override:
+            opt = keras.optimizers.RMSprop(lr=lrate, rho=mom, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.RMSprop(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adagrad':
+        if opt_override:
+            opt = keras.optimizers.Adagrad(lr=lrate, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.Adagrad(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adadelta':
+        if opt_override:
+            opt = keras.optimizers.Adadelta(lr=lrate, rho=mom, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.Adadelta(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adam':
+        if opt_override:
+            try:
+                beta1 = mom[0]
+                beta2 = mom[1]
+            except TypeError:
+                beta1 = mom
+                beta2 = mom
+                print('Only one momentum given for adam-type optimizer.  Using this value for both beta1 and beta2')
+            if nest:
+                opt = keras.optimizers.Nadam(lr=lrate, beta_1=beta1, beta_2=beta2, schedule_decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+            else:
+                opt = keras.optimizers.Adam(lr=lrate, beta_1=beta1, beta_2=beta2, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            if nest:
+                opt = keras.optimizers.Nadam(clipnorm=clip_norm, clipvalue=clip_val)
+            else:
+                opt = keras.optimizers.Adam(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adamax':
+        if opt_override:
+            try:
+                beta1 = mom[0]
+                beta2 = mom[1]
+            except TypeError:
+                beta1 = mom
+                beta2 = mom
+                print('Only one momentum given for adam-type optimizer.  Using this value for both beta1 and beta2')
+            opt = keras.optimizers.Adamax(lr=lrate, beta_1=mom, beta_2=mom, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.Adamax(clipnorm=clip_norm, clipvalue=clip_val)
+    
+    # Define weight regularizers
+    if reg_type is None:
+        regularizer = keras.regularizers.l2(0)
+    if reg_type == 'L1':
+        regularizer = keras.regularizers.l1(reg)
+    elif reg_type == 'L2':
+        regularizer = keras.regularizers.l2(reg)
+    elif reg_type == 'L1_L2':
+        try:
+            l1reg = reg[0]
+            l2reg = reg[1]
+        except TypeError:
+            l1reg = reg
+            l2reg = reg
+            print('reg_type is L1_L2 but reg was not passed a list.  Using reg for both L1 and L2')
+        regularizer = keras.regularizers.l1_l2(l1=l1reg, l2=l2reg)
+    
+    # Build model
     mod = keras.models.Sequential()
-    mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=keras.regularizers.l1(wreg)))
+    if activ is 'prelu':
+        mod.add(keras.layers.Dense(units=arch[0], activation='linear', input_dim=dim_in, kernel_regularizer=regularizer))
+        mod.add(keras.layers.advanced_activations.PReLU())
+    else:
+        mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=regularizer))
     if bnorm:
         mod.add(keras.layers.BatchNormalization())
     if dropout:
         mod.add(keras.layers.Dropout(do))
     for i in arch[1:]:
-        mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=keras.regularizers.l1(wreg)))
+        if activ is 'prelu':
+            mod.add(keras.layers.Dense(units=i, activation='linear', kernel_regularizer=regularizer))
+            mod.add(keras.layers.advanced_activations.PReLU())
+        else:
+            mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=regularizer))
         if bnorm:
             mod.add(keras.layers.BatchNormalization())
         if dropout:
             mod.add(keras.layers.Dropout(do))
+    if drop_last_only:
+        mod.add(keras.layers.Dropout(do))
     mod.add(keras.layers.Dense(units=1, activation='linear'))
     mod.compile(loss='mean_squared_error', optimizer=opt)
     
     if lsuv:
         mod = LSUVinit(mod, feat_train[:64])
         
+    # Get initial weights to reset model after pretraining
+    weights = mod.get_weights()
+
     # Initialize some outputs
     hist_list = []
     val_list = []
@@ -778,184 +842,6 @@ def deep_model(data, atom, activ, arch, lrate, mom, dec, max_epochs, min_epochs=
     up_count = 0
     if pretrain is not None:
         for i in range(int(epochs/per)):
-            pt1 = mod.evaluate(feat_val, shift_val, verbose=0)
-            val_list.append(pt1)
-    
-            if pt1 < val_min:
-                val_min = pt1
-    
-            hist = mod.fit(feat_train, shift_train, batch_size=64, epochs=per)
-            hist_list += hist.history['loss']
-            pt2 = mod.evaluate(feat_val, shift_val, verbose=0)
-            
-            if pretrain == 'GL' or pretrain == 'PQ'
-                gl = 100 * (pt2/val_min - 1)
-                
-                if pretrain == 'GL':
-                    param_list.append(gl)
-                    if gl > tol:
-                        print('Broke loop at round ' + str(i))
-                        break
-                
-                if pretrain == 'PQ':
-                    strip_avg = np.array(hist.history['loss']).mean()
-                    strip_min = min(np.array(hist.history['loss']))
-                    p = 1000 * (strip_avg / strip_min - 1)
-                    pq = gl / p
-                    param_list.append(pq)
-                    if pq > tol:
-                        print('Broke loop at round ' + str(i))
-                        break
-            
-            if pretrain == 'UP':
-                if pt2 > pt1:
-                    up_count += 1
-                    param_list.append(up_count)
-                    if up_count >= tol:
-                        print('Broke loop at round ' + str(i))
-                        break
-                else:
-                    up_count = 0
-                    param_list.append(up_count)
-            
-            print('The validation loss at round ' + str(i) + ' is ' + str(pt2))
-
-        min_val_idx = min((val, idx) for (idx, val) in enumerate(val_list))[1]
-        val_epochs = max(min_val_idx * per, min_epochs)
-    else:
-        val_epochs = epochs
-
-    # Retrain model on full dataset for same number of epochs as was
-    # needed to obtain min validation loss
-    mod = keras.models.Sequential()
-    mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=keras.regularizers.l1(wreg)))
-    if bnorm:
-        mod.add(keras.layers.BatchNormalization())
-    if dropout:
-        mod.add(keras.layers.Dropout(do))
-    for i in arch[1:]:
-        mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=keras.regularizers.l1(wreg)))
-        if bnorm:
-            mod.add(keras.layers.BatchNormalization())
-        if dropout:
-            mod.add(keras.layers.Dropout(do))
-    mod.add(keras.layers.Dense(units=1, activation='linear'))
-    mod.compile(loss='mean_squared_error', optimizer=opt)
-    mod.fit(feats, shift_norm, batch_size=64, epochs=val_epochs)
-
-    return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
-
-
-def deep_model_prelu(data, atom, arch, lrate, mom, dec, max_epochs, min_epochs=1, per=5, tol=1.0, do=0, wreg=0, activ='linear', pretrain=None, bnorm=False, lsuv=False, nest=False, rings=False, rcoil=False, norm_shifts=True):
-    '''Constructs a model from the given features and shifts for
-    the requested atom.  The model is trained for the given number
-    of epochs with the loss being checked every per epochs.  Training
-    stops when this loss increases by more than tol. The arch argument
-    is a list specifying the number of hidden units at each layer.
-    
-    data = Feature and target data (Pandas DataFrame)
-    atom = Name of atom to predict (Str)
-    arch = List of the number of neurons per layer (List)
-    lrate = Learning rate for SGD (Float)
-    mom = Momentum for SGD (Float)
-    dec = Decay for SGD learning rate (Float)
-    max_epochs = Maximum number of epochs to train (Int)
-    min_epochs = Minimum number of epochs to train (Int)
-    per = Number of epochs in a test strip for pretraining (Int)
-    tol = Pretraining parameter (Float)
-    do = Dropout percentage between 0 and 1 (Float)
-    wreg = Parameter for L1 regularization of dense layers (Float)
-    activ = activation for dense layers before prelu layers (should probably always be linear if prelu layers are present)
-    pretrain = Whether or not and how to do pretraining.  Accepts None, GL, PQ, or UP (Str)
-    bnorm = Use batch normalization (Bool)
-    lsuv = Use layer-wise sequential unit variance initialization (Bool)
-    nest = Use Nesterov momentum (Bool)
-    rings = DataFrame contains ring-current columns (Bool)
-    rcoil = DataFrame contains random-coil columns (Bool)
-    norm_shifts = Normalize the target shifts rather than using raw values (Bool)
-    '''
-
-    dat = data[data[atom].notnull()]
-    feats = dat.drop(atom_names, axis=1)
-    shifts = dat[atom]
-    
-    # Normalize shifts if this is desired
-    if norm_shifts:
-        shifts_mean = shifts.mean()
-        shifts_std = shifts.std()
-        shift_norm = (shifts - shifts_mean) / shifts_std
-        shift_norm = shift_norm.values
-    else:
-        shifts_mean = 0
-        shifts_std = 1
-        shift_norm = shifts.values
-
-    
-    # Need to drop the random coil and ring current columns for the other atoms if 
-    # such columns are in the data.
-    if rings:
-        ring_col = atom + '_RC'
-        rem1 = ring_cols.copy()
-        rem1.remove(ring_col)
-        feats = feats.drop(rem1, axis=1)
-        feats[ring_col] = feats[ring_col].fillna(value=0)
-    if rcoil:
-        rcoil_col = 'RCOIL_' + atom
-        rem2 = rcoil_cols.copy()
-        rem2.remove(rcoil_col)
-        feats = feats.drop(rem2, axis=1)
-    
-# The following is an alternative way to include the rcoil shifts rather than simply normalizing
-# those columns.  This is probably equivalent since the rcoil and raw shifts are similarly 
-# distributed.  It is thus not currently implemented.
-    # If using random coil values as features, standardize them in same way as target shifts
-#    if rcoil and rccs_feat:
-#        feats[rccs_feats] = (feats[rccs_feats] - shifts_mean) / shifts_std
-
-    # Split up the data into train and validation
-    feats = feats.values
-    feat_train, feat_val, shift_train, shift_val = skl.model_selection.train_test_split(feats, shift_norm, test_size=0.2)
-    dim_in = feats.shape[1]
-
-    
-    opt = keras.optimizers.SGD(lr=lrate, momentum=mom, decay=dec, nesterov=nest)
-    
-    if do == 0:
-        dropout = False
-    else:
-        dropout=True
-    
-    # Build model
-    mod = keras.models.Sequential()
-    mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=keras.regularizers.l1(wreg)))
-    if bnorm:
-        mod.add(keras.layers.BatchNormalization())
-    mod.add(keras.layers.advanced_activations.PReLU())
-    if dropout:
-        mod.add(keras.layers.Dropout(do))
-    for i in arch[1:]:
-        mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=keras.regularizers.l1(wreg)))
-        if bnorm:
-            mod.add(keras.layers.BatchNormalization())
-        mod.add(keras.layers.advanced_activations.PReLU())
-        if dropout:
-            mod.add(keras.layers.Dropout(do))
-    mod.add(keras.layers.Dense(units=1, activation='linear'))
-    mod.compile(loss='mean_squared_error', optimizer=opt)
-    
-    if lsuv:
-        mod = LSUVinit(mod, feat_train[:64])
-
-    # Initialize some outputs
-    hist_list = []
-    val_list = []
-    param_list = []
-
-    # Do pretraining to determine the best number of epochs for training
-    val_min = 10 ** 10
-    up_count = 0
-    if pretrain is not None:
-        for i in range(int(max_epochs/per)):
             pt1 = mod.evaluate(feat_val, shift_val, verbose=0)
             val_list.append(pt1)
     
@@ -1001,99 +887,135 @@ def deep_model_prelu(data, atom, arch, lrate, mom, dec, max_epochs, min_epochs=1
         min_val_idx = min((val, idx) for (idx, val) in enumerate(val_list))[1]
         val_epochs = max(min_val_idx * per, min_epochs)
     else:
-        val_epochs = max_epochs
+        val_epochs = epochs
 
     # Retrain model on full dataset for same number of epochs as was
     # needed to obtain min validation loss
-    mod = keras.models.Sequential()
-    mod.add(keras.layers.Dense(units=arch[0], activation=activ, input_dim=dim_in, kernel_regularizer=keras.regularizers.l1(wreg)))
-    if bnorm:
-        mod.add(keras.layers.BatchNormalization())
-    mod.add(keras.layers.advanced_activations.PReLU())
-    if dropout:
-        mod.add(keras.layers.Dropout(do))
-    for i in arch[1:]:
-        mod.add(keras.layers.Dense(units=i, activation=activ, kernel_regularizer=keras.regularizers.l1(wreg)))
-        if bnorm:
-            mod.add(keras.layers.BatchNormalization())
-        mod.add(keras.layers.advanced_activations.PReLU())
-        if dropout:
-            mod.add(keras.layers.Dropout(do))
-    mod.add(keras.layers.Dense(units=1, activation='linear'))
-    mod.compile(loss='mean_squared_error', optimizer=opt)
+    mod.set_weights(weights)
     mod.fit(feats, shift_norm, batch_size=64, epochs=val_epochs)
-
-    return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
-
-
-def branch_model(data, atom, activ, arch, lrate, mom, dec, min_epochs, max_epochs, per, tol, do, reg, pretrain=True, bnorm=False, dropout=False, nest=False, rcoil=False, rccs_feat=False, merge_softmax=False):
-    '''Constructs a model from the given features and shifts for
-    the requested atom.  The model is trained for the given number
-    of epochs with the loss being checked every per epochs.  Training
-    stops when this loss increases by more than tol. The arch argument
-    is a list specifying the number of hidden units at each layer.
-    The architecture for this network is split into two branches that
-    handle structural and sequential information respectively rather
-    than being fully connected.  The arch parameter is thus given as a
-    list, the first two elements of which are themselves lists giving 
-    the neurons for each layer of each branch and the remaining elements
-    giving the neurons for the remainder of the network, after the two 
-    branches meet. Parameters rcoil and rccs_feat determine whether 
-    random coil chemical shifts are used and, if so, whether they are
-    subtracted off or used as features.'''
     
-    # First define the column names for easy access
-    col_phipsi = ['PHI_'+i for i in ['COS_i-1', 'SIN_i-1']]
-    col_phipsi += [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i', 'SIN_i']]
-    col_phipsi += ['PSI_'+i for i in ['COS_i+1', 'SIN_i+1']]
-    col_chi = [i+j+k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_', 'CHI2_'] for j in ['COS', 'SIN', 'EXISTS']]
-    col_hbprev = ['O_'+i+'_i-1' for i in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
-    col_hbond = [i+j+'_i' for i in ['Ha_', 'HN_', 'O_'] for j in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
-    col_hbnext = ['HN_'+i+'_i+1' for i in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
-    col_s2 = ['S2'+i for i in ['_i-1', '_i', '_i+1']]
-    struc_cols = col_phipsi + col_chi + col_hbprev + col_hbond + col_hbnext + col_s2
-    blosum_names = ['BLOSUM62_NUM_'+list(IUPACData.protein_letters_3to1.keys())[i].upper() for i in range(20)]
-    col_blosum = [blosum_names[i]+j for j in ['_i-1', '_i', '_i+1'] for i in range(20)]
-    seq_cols = col_blosum
-
-    # Now seperate out the features and shifts
-    dat = data[data[atom].notnull()]
-    feats = dat.drop(atom_names, axis=1)
-    struc_feats = dat[struc_cols].values
-    seq_feats = dat[seq_cols].values
-    if rcoil:
-        rccs_feats = dat['RC_' + atom]
-    if rcoil and not rccs_feat:
-        rccs_names = ['RC_' + i for i in atom_names]
-        raw_shifts = dat[atom]
-        shifts = raw_shifts - rccs_feats
+    if reject_outliers is not None:
+        return rej_mean, rej_std, val_list, hist_list, param_list, mod
     else:
-        shifts = dat[atom]
+        return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
+
+
+def strucseq_branch_model(data, atom, activ, arch, lrate, mom, dec, epochs, min_epochs=0, per=5, tol=1.0, do=[0.0, 0.0, 0.0], reg=[0.0, 0.0, 0.0], seq_type='blosum', merge_mode='concat',
+                          pretrain=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, reject_outliers=None):
+    '''Constructs a model from the given features and shifts that seperately processes structure 
+    and sequence information.  The arch argument is a list specifying the number of hidden units
+    at each layer.  The architecture for this network is split into two branches that handle
+    structural and sequential information respectively rather than being fully connected.  The 
+    arch parameter is thus given as a list, the first two elements of which are themselves lists
+    giving the neurons for each layer of each branch and the remaining elements giving the neurons
+    for the remainder of the network, after the two branches meet. 
     
-    # Standardize the shifts
-    shifts_mean = shifts.mean()
-    shifts_std = shifts.std()
-    shift_norm = (shifts - shifts_mean) / shifts_std
+    data = Feature and target data (Pandas DataFrame)
+    atom = Name of atom to predict (Str)
+    activ = Activation function for dense layers - accepts "prelu" (Str)
+    arch = List of the number of neurons per layer (List)
+    lrate = Learning rate for SGD (Float)
+    mom = Momentum for SGD (Float)
+    dec = Decay for SGD learning rate (Float)
+    max_epochs = Maximum number of epochs to train (Int)
+    min_epochs = Minimum number of epochs to train (Int)
+    per = Number of epochs in a test strip for pretraining (Int)
+    tol = Pretraining parameter (Float)
+    do = List of dropout percentages between 0 and 1.  1st, 2nd, and 3rd elements used for
+          structure branch, sequence branch, and combined processing respectively (List of Floats)
+    reg = List of parameters for L1 regularization of dense layers.  1st, 2nd, and 3rd elements used
+          for structure branch, sequence branch, and combined processing respectively (List of Floats)
+    seq_type = How sequence information is encoded.  Accepts "blosum" or "binary" (Str)
+    pretrain = Whether or not and how to do pretraining.  Accepts None, GL, PQ, or UP (Str)
+    bnorm = Use batch normalization (Bool)
+    lsuv = Use layer-wise sequential unit variance initialization (Bool)
+    nest = Use Nesterov momentum (Bool)
+    rings = DataFrame contains ring-current columns (Bool)
+    rcoil = DataFrame contains random-coil columns (Bool)
+    norm_shifts = Normalize the target shifts rather than using raw values (Bool)
+    reject_outliers = Eliminate entries for which the targets differ by more than this number of standard deviations (Float or None)
+    '''
     
-    # For early stopping pretraining, do a train_test_split
+    dat = data[data[atom].notnull()]
+    try:
+        dat = dat.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
+    except ValueError:
+        pass
+    try:
+        dat = dat.drop(['RESNAME_ip1', 'RESNAME_im1'], axis=1)
+    except ValueError:
+        pass
+
+    if reject_outliers is not None:
+        n_sig = max(reject_outliers, 0.1) # Don't accept a cutoff less than 0.1 * std
+        rej_mean = dat[atom].mean()
+        rej_std = dat[atom].std()
+        up_rej = rej_mean + n_sig * rej_std
+        low_rej = rej_mean - n_sig * rej_std
+        dat = dat[(dat[atom] > low_rej) & (dat[atom] < up_rej)]
+
+    feats = dat.drop(atom_names, axis=1)
+    shifts = dat[atom]
+    
+    # Normalize shifts if this is desired
+    if norm_shifts:
+        shifts_mean = shifts.mean()
+        shifts_std = shifts.std()
+        shift_norm = (shifts - shifts_mean) / shifts_std
+        shift_norm = shift_norm.values
+    else:
+        shifts_mean = 0
+        shifts_std = 1
+        shift_norm = shifts.values
+
+    
+    # Need to drop the random coil and ring current columns for the other atoms if 
+    # such columns are in the data.
+    try:
+        ring_col = atom + '_RC'
+        rem1 = ring_cols.copy()
+        rem1.remove(ring_col)
+        feats = feats.drop(rem1, axis=1)
+        feats[ring_col] = feats[ring_col].fillna(value=0)
+        rings = True
+    except KeyError:
+        rings = False
+    except ValueError:
+        pass
+    try:
+        rcoil_col = 'RCOIL_' + atom
+        rem2 = rcoil_cols.copy()
+        rem2.remove(rcoil_col)
+        feats = feats.drop(rem2, axis=1)
+        rcoil = True
+    except ValueError:
+        rcoil = False
+
+    # Separate features corresponding to structure and sequence information    
+    structure_cols = struc_cols.copy()
+    if seq_type == 'binary':
+        sequence_cols = bin_seq_cols.copy()
+    elif seq_type == 'blosum':
+        sequence_cols = seq_cols.copy()
+    if rings:
+        structure_cols += [ring_col]
+    if rcoil:
+        structure_cols += [rcoil_col]
+    struc_feats, seq_feats = feats[structure_cols].values, dat[sequence_cols].values
     feat_train, feat_val, shift_train, shift_val = skl.model_selection.train_test_split(feats, shift_norm, test_size=0.2)
-    struc_feat_train = feat_train[struc_cols].values
-    struc_feat_val = feat_val[struc_cols].values
-    seq_feat_train = feat_train[seq_cols].values
-    seq_feat_val = feat_val[seq_cols].values
-    shift_train = shift_train.values
-    shift_val = shift_val.values
-    
-    # If using random coil chemical shifts as input features, standardize them
-    if rcoil and rccs_feat:
-        rc_feat_train = feat_train['RC_' + atom].values
-        rc_feat_val = feat_val['RC_' + atom].values
-        rc_feat_train = (rc_feat_train - shifts_mean) / shifts_std
-        rc_feat_val = (rc_feat_val - shifts_mean) / shifts_std
-    
-    # Define input dimensions and optimization procedure
+    struc_feat_train, struc_feat_val = feat_train[structure_cols].values, feat_val[structure_cols].values
+    seq_feat_train, seq_feat_val = feat_train[sequence_cols].values, feat_val[sequence_cols].values
+#    shift_train, shift_val = shift_train.values, shift_val.values
     struc_dim_in = struc_feat_train.shape[1]
     seq_dim_in = seq_feat_train.shape[1]
+
+    
+    if max(do) > 0:
+        dropout = True
+    else:
+        dropout = False
+
+    # Define optimization procedure
     opt = keras.optimizers.SGD(lr=lrate, momentum=mom, decay=dec, nesterov=nest)
     
     # Build model
@@ -1103,149 +1025,481 @@ def branch_model(data, atom, activ, arch, lrate, mom, dec, min_epochs, max_epoch
     seq_in = keras.layers.Input(shape=(seq_dim_in,), name='seq_input')
     seq = keras.layers.Lambda(lambda x: x)(seq_in)
     for i in arch[0]:
-        struc = keras.layers.Dense(i, activation=activ, kernel_regularizer=keras.regularizers.l1(reg[0]))(struc)
+        if activ == 'prelu':
+            struc = keras.layers.Dense(i, activation='linear', kernel_regularizer=keras.regularizers.l1(reg[0]))(struc)
+            struc = keras.layers.advanced_activations.PReLU()(struc)
+        else:
+            struc = keras.layers.Dense(i, activation=activ, kernel_regularizer=keras.regularizers.l1(reg[0]))(struc)
         if bnorm:
             struc = keras.layers.BatchNormalization()(struc)
         if dropout:
-            struc = keras.layers.Dropout(do)(struc)
+            struc = keras.layers.Dropout(do[0])(struc)
     for i in arch[1]:
-        seq = keras.layers.Dense(i, activation=activ, kernel_regularizer=keras.regularizers.l1(reg[1]))(seq)
+        if activ == 'prelu':
+            seq = keras.layers.Dense(i, activation='linear', kernel_regularizer=keras.regularizers.l1(reg[1]))(seq)
+            seq = keras.layers.advanced_activations.PReLU()(seq)
+        else:
+            seq = keras.layers.Dense(i, activation=activ, kernel_regularizer=keras.regularizers.l1(reg[1]))(seq)
         if bnorm:
-            struc = keras.layers.BatchNormalization()(seq)
+            seq = keras.layers.BatchNormalization()(seq)
         if dropout:
-            struc = keras.layers.Dropout(do)(seq)
+            seq = keras.layers.Dropout(do[1])(seq)
 
-    # Concatenate structure and sequence (and random coil) information
-    if rcoil and rccs_feat:
-        rccs = keras.layers.Input(shape=(1,), name='rccs_input')
-        merge = keras.layers.concatenate([struc, seq, rccs])
-    else:
+    if merge_mode == 'concat':
         merge = keras.layers.concatenate([struc, seq])
+    elif merge_mode == 'sum':
+        merge = keras.layers.Add()([struc, seq])
     
-    # Process merged info, either a single layer with softmax or 
-    # multiple layers with same network-wide activation function
-    if merge_softmax:
-        merge = keras.layers.Dense(arch[2], activation='softmax', kernel_regularizer=keras.regularizers.l1(reg[2]))(merge)
-    else:
-        for i in arch[2:]:
+    # Process merged info
+    for i in arch[2:]:
+        if activ == 'prelu':
+            merge = keras.layers.Dense(i, activation='linear', kernel_regularizer=keras.regularizers.l1(reg[2]))(merge)
+            merge = keras.layers.advanced_activations.PReLU()(merge)
+        else:
             merge = keras.layers.Dense(i, activation=activ, kernel_regularizer=keras.regularizers.l1(reg[2]))(merge)
+        if bnorm:
+            merge = keras.layers.BatchNormalization()(merge)
+        if dropout:
+            merge = keras.layers.Dropout(do[2])(merge)
     
+    # Define output
     predicted_shift = keras.layers.Dense(units=1, activation='linear')(merge)
-    if rcoil and rccs_feat:
-        model = keras.Model(inputs=[struc_in, seq_in, rccs], outputs=predicted_shift)
-    else:
-        model = keras.Model(inputs=[struc_in, seq_in], outputs=predicted_shift)
+    
+    # Define model and compile
+    mod = keras.Model(inputs=[struc_in, seq_in], outputs=predicted_shift)
+    mod.compile(loss='mean_squared_error', optimizer=opt)
 
-    model.compile(loss='mean_squared_error', optimizer=opt)
-
+    if lsuv:
+        mod = LSUVinit(mod, feat_train[:64])
+    
+    weights = mod.get_weights()
+    
     # Initialize some outputs
     hist_list = []
     val_list = []
+    param_list = []
 
-    # Train until the validation loss gets too far above the observed min
+    # Do pretraining to determine the best number of epochs for training
     val_min = 10 ** 10
-    if pretrain:
-        for i in range(int(max_epochs/per)):
-            if rcoil and rccs_feat:
-                pt1 = model.evaluate([struc_feat_val, seq_feat_val, rc_feat_val], shift_val, verbose=0)
-                hist = model.fit([struc_feat_train, seq_feat_train, rc_feat_train], shift_train, batch_size=64, epochs=per)
-                pt2 = model.evaluate([struc_feat_val, seq_feat_val, rc_feat_val], shift_val, verbose=0)
-            else:
-                pt1 = model.evaluate([struc_feat_val, seq_feat_val], shift_val, verbose=0)
-                hist = model.fit([struc_feat_train, seq_feat_train], shift_train, batch_size=64, epochs=per)
-                pt2 = model.evaluate([struc_feat_val, seq_feat_val], shift_val, verbose=0)
+    up_count = 0
+    if pretrain is not None:
+        for i in range(int(epochs/per)):
+            pt1 = mod.evaluate([struc_feat_val, seq_feat_val], shift_val, verbose=0)
             val_list.append(pt1)
+    
             if pt1 < val_min:
                 val_min = pt1
+    
+            hist = mod.fit([struc_feat_train, seq_feat_train], shift_train, batch_size=64, epochs=per)
             hist_list += hist.history['loss']
-            delt1 = pt1 - val_min
-            delt2 = pt2 - val_min
+            pt2 = mod.evaluate([struc_feat_val, seq_feat_val], shift_val, verbose=0)
+            
+            if pretrain == 'GL' or pretrain == 'PQ':
+                gl = 100 * (pt2/val_min - 1)
+                
+                if pretrain == 'GL':
+                    param_list.append(gl)
+                    if gl > tol:
+                        print('Broke loop at round ' + str(i))
+                        break
+                
+                if pretrain == 'PQ':
+                    strip_avg = np.array(hist.history['loss']).mean()
+                    strip_min = min(np.array(hist.history['loss']))
+                    p = 1000 * (strip_avg / strip_min - 1)
+                    pq = gl / p
+                    param_list.append(pq)
+                    if pq > tol:
+                        print('Broke loop at round ' + str(i))
+                        break
+            
+            if pretrain == 'UP':
+                if pt2 > pt1:
+                    up_count += 1
+                    param_list.append(up_count)
+                    if up_count >= tol:
+                        print('Broke loop at round ' + str(i))
+                        break
+                else:
+                    up_count = 0
+                    param_list.append(up_count)
+            
             print('The validation loss at round ' + str(i) + ' is ' + str(pt2))
-            if delt1 > tol and delt2 > tol:
-                print('Broke loop at round ' + str(i))
-                break
-            if pt2 is np.nan:
-                print('Broke loop because of NaN')
-                break
+
         min_val_idx = min((val, idx) for (idx, val) in enumerate(val_list))[1]
         val_epochs = max(min_val_idx * per, min_epochs)
     else:
-        val_epochs = max_epochs
+        val_epochs = epochs
+    
+    
     # Retrain model on full dataset for same number of epochs as was
     # needed to obtain min validation loss
-    struc_in = keras.layers.Input(shape=(struc_dim_in,), name='struc_input')
-    struc = keras.layers.Lambda(lambda x: x)(struc_in)
-    seq_in = keras.layers.Input(shape=(seq_dim_in,), name='seq_input')
-    seq = keras.layers.Lambda(lambda x: x)(seq_in)
-
-    for i in arch[0]:
-        struc = keras.layers.Dense(i, activation=activ, kernel_regularizer=keras.regularizers.l1(reg[0]))(struc)
-        if bnorm:
-            struc = keras.layers.BatchNormalization()(struc)
-        if dropout:
-            struc = keras.layers.Dropout(do)(struc)
-    for i in arch[1]:
-        seq = keras.layers.Dense(i, activation=activ, kernel_regularizer=keras.regularizers.l1(reg[1]))(seq)
-        if bnorm:
-            struc = keras.layers.BatchNormalization()(seq)
-        if dropout:
-            struc = keras.layers.Dropout(do)(seq)
-
-    # Concatenate structure and sequence (and random coil) information
-    if rcoil and rccs_feat:
-        rccs = keras.layers.Input(shape=(1,), name='rccs_input')
-        merge = keras.layers.concatenate([struc, seq, rccs])
-    else:
-        merge = keras.layers.concatenate([struc, seq])
     
-    # Process merged info, either a single layer with softmax or 
-    # multiple layers with same network-wide activation function
-    if merge_softmax:
-        merge = keras.layers.Dense(arch[2], activation='softmax', kernel_regularizer=keras.regularizers.l1(reg[2]))(merge)
+    mod.set_weights(weights)
+
+    mod.fit([struc_feats, seq_feats], shift_norm, batch_size=64, epochs=val_epochs)
+
+    if reject_outliers is not None:
+        return rej_mean, rej_std, val_list, hist_list, param_list, mod
     else:
-        for i in arch[2:]:
-            merge = keras.layers.Dense(i, activation=activ, kernel_regularizer=keras.regularizers.l1(reg[2]))(merge)
+        return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
+
+
+
+def residual_model(data, atom, arch, activ='prelu', lrate=0.001, mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None,
+                   pretrain=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0, clip_norm=0, skip_connection='residual', reject_outliers=None):
+    '''Constructs a residual neural network.  Essentially, a fully-connected network wherein all layers are the same width and that is
+    endowed with "skip connections" that directly connect the output at various layers in the network (depending on skip_connection kwarg)
+    that allow intervening layers to be bypassed during backpropagation.  Effectively allows the net to "unravel" as the training first
+    learns representations from shallower sub-networks before more dramatically adjusting weights/biases of later layers.  Also can be 
+    thought of as an ensemble of networks of various lengths.
     
-    predicted_shift = keras.layers.Dense(units=1, activation='linear')(merge)
-    if rcoil and rccs_feat:
-        model = keras.Model(inputs=[struc_in, seq_in, rccs], outputs=predicted_shift)
-    else:
-        model = keras.Model(inputs=[struc_in, seq_in], outputs=predicted_shift)
-
-    model.compile(loss='mean_squared_error', optimizer=opt)
+    data = Feature and target data (Pandas DataFrame)
+    atom = Name of atom to predict (Str)
+    activ = Activation function for dense layers - accepts "prelu" (Str)
+    arch = List [D,W] specifying the depth (number of layers) and width (neurons per layer) for the network (List)
+    lrate = Learning rate for SGD (Float)
+    mom = Momentum for SGD (Float)
+    dec = Decay for SGD learning rate (Float)
+    max_epochs = Maximum number of epochs to train (Int)
+    min_epochs = Minimum number of epochs to train (Int)
+    per = Number of epochs in a test strip for pretraining (Int)
+    tol = Pretraining parameter (Float)
+    do = Dropout percentage between 0 and 1 (Float)
+    reg = Parameter for weight regularization (Float)
+    pretrain = Whether or not and how to do pretraining.  Accepts None, GL, PQ, or UP (Str)
+    bnorm = Use batch normalization (Bool)
+    lsuv = Use layer-wise sequential unit variance initialization (Bool)
+    nest = Use Nesterov momentum (Bool)
+    rings = DataFrame contains ring-current columns (Bool)
+    rcoil = DataFrame contains random-coil columns (Bool)
+    norm_shifts = Normalize the target shifts rather than using raw values (Bool)
+    opt_override = Override default optimization parameters (Bool)
+    clip_val = Clip values of gradients in optimizer (Float)
+    clip_norm = Clip norms of gradients in optimizer (Float)
+    skip_connections = Mode of skip connection - accepts "residual", "coupled_highway", or "full_highway" (Str)
+    reject_outliers = Eliminate entries for which the targets differ by more than this number of standard deviations (Float or None)
+    '''
     
-    if rcoil and rccs_feat:
-        model.fit([struc_feats, seq_feats, rccs_feats], shift_norm, batch_size=64, epochs=val_epochs)
-    else:
-        model.fit([struc_feats, seq_feats], shift_norm, batch_size=64, epochs=val_epochs)
+    dat = data[data[atom].notnull()]
+    try:
+        dat = dat.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
+    except ValueError:
+        pass
+    try:
+        dat = dat.drop(['RESNAME_ip1', 'RESNAME_im1'], axis=1)
+    except ValueError:
+        pass
 
-    return shifts_mean, shifts_std, val_list, hist_list, model
+    if reject_outliers is not None:
+        n_sig = max(reject_outliers, 0.1) # Don't accept a cutoff less than 0.1 * std
+        rej_mean = dat[atom].mean()
+        rej_std = dat[atom].std()
+        up_rej = rej_mean + n_sig * rej_std
+        low_rej = rej_mean - n_sig * rej_std
+        dat = dat[(dat[atom] > low_rej) & (dat[atom] < up_rej)]
 
-
-def bidir_lstm_model(data, atom, arch=[[30]], opt='rmsprop', epochs=100, min_epochs=1, per=5, tol=2, do=0.0, lstm_do=0.0, rec_do=0.0, val_split=0.2, window=10, rings=True, rcoil=False, pretrain=None, norm_shifts=True, activ='linear', prelu=False, randomize=False):
-
-    dat = data.copy()
     feats = dat.drop(atom_names, axis=1)
-    feats = feats.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
+    shifts = dat[atom]
+    
+    # Normalize shifts if this is desired
+    if norm_shifts:
+        shifts_mean = shifts.mean()
+        shifts_std = shifts.std()
+        shift_norm = (shifts - shifts_mean) / shifts_std
+        shift_norm = shift_norm.values
+    else:
+        shifts_mean = 0
+        shifts_std = 1
+        shift_norm = shifts.values
+
+    
     # Need to drop the random coil and ring current columns for the other atoms if 
     # such columns are in the data.
-    if rings:
+    try:
         ring_col = atom + '_RC'
         rem1 = ring_cols.copy()
         rem1.remove(ring_col)
         feats = feats.drop(rem1, axis=1)
         feats[ring_col] = feats[ring_col].fillna(value=0)
-    if rcoil:
+    except KeyError:
+        pass
+    except ValueError:
+        pass
+    try:
         rcoil_col = 'RCOIL_' + atom
         rem2 = rcoil_cols.copy()
         rem2.remove(rcoil_col)
         feats = feats.drop(rem2, axis=1)
-    num_feats = feats.shape[1]
+    except ValueError:
+        pass
     
-    if do > 0:
-        dropout=True
+    feats = feats.values
+    feat_train, feat_val, shift_train, shift_val = skl.model_selection.train_test_split(feats, shift_norm, test_size=0.2)
+    dim_in = feats.shape[1]
+    
+    if do > 0 and not drop_last_only:
+        dropout = True
     else:
-        dropout=False
+        dropout = False
+
+    # Define optimization procedure
+    if opt_type is 'sgd':
+        opt = keras.optimizers.SGD(lr=lrate, momentum=mom, decay=dec, nesterov=nest, clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'rmsprop':
+        if opt_override:
+            opt = keras.optimizers.RMSprop(lr=lrate, rho=mom, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.RMSprop(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adagrad':
+        if opt_override:
+            opt = keras.optimizers.Adagrad(lr=lrate, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.Adagrad(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adadelta':
+        if opt_override:
+            opt = keras.optimizers.Adadelta(lr=lrate, rho=mom, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.Adadelta(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adam':
+        if opt_override:
+            try:
+                beta1 = mom[0]
+                beta2 = mom[1]
+            except TypeError:
+                beta1 = mom
+                beta2 = mom
+                print('Only one momentum given for adam-type optimizer.  Using this value for both beta1 and beta2')
+            if nest:
+                opt = keras.optimizers.Nadam(lr=lrate, beta_1=beta1, beta_2=beta2, schedule_decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+            else:
+                opt = keras.optimizers.Adam(lr=lrate, beta_1=beta1, beta_2=beta2, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            if nest:
+                opt = keras.optimizers.Nadam(clipnorm=clip_norm, clipvalue=clip_val)
+            else:
+                opt = keras.optimizers.Adam(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adamax':
+        if opt_override:
+            try:
+                beta1 = mom[0]
+                beta2 = mom[1]
+            except TypeError:
+                beta1 = mom
+                beta2 = mom
+                print('Only one momentum given for adam-type optimizer.  Using this value for both beta1 and beta2')
+            opt = keras.optimizers.Adamax(lr=lrate, beta_1=mom, beta_2=mom, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.Adamax(clipnorm=clip_norm, clipvalue=clip_val)
+    
+    # Define weight regularizers
+    if reg_type is None:
+        regularizer = keras.regularizers.l2(0)
+    if reg_type == 'L1':
+        regularizer = keras.regularizers.l1(reg)
+    elif reg_type == 'L2':
+        regularizer = keras.regularizers.l2(reg)
+    elif reg_type == 'L1_L2':
+        try:
+            l1reg = reg[0]
+            l2reg = reg[1]
+        except TypeError:
+            l1reg = reg
+            l2reg = reg
+            print('reg_type is L1_L2 but reg was not passed a list.  Using reg for both L1 and L2')
+        regularizer = keras.regularizers.l1_l2(l1=l1reg, l2=l2reg)
+    
+    # Build model
+    # Define depth and width
+    depth = arch[0]
+    width = arch[1]
+    # Define input
+    feat_in = keras.layers.Input(shape=(dim_in,), name='feature_input')
+    # Define hidden layer initially as identity on input
+    h_layer = keras.layers.Lambda(lambda x: x)(feat_in)
+    if skip_connection == 'coupled_highway':
+        carry = keras.layers.Dense(width, activation='sigmoid')
+#        identity = keras.layers.Lambda(lambda x: x)
+#        transfer = keras.layers.Subtract()([identity, carry])
+    if skip_connection == 'full_highway':
+        carry = keras.layers.Dense(width, activation='sigmoid')
+        transfer = keras.layers.Dense(width, activation='sigmoid')
+    # Iterate to build the network
+    for i in range(depth):
+        if dim_in == width or i > 0:
+            old_h = h_layer
+        if activ == 'prelu':
+            h_layer = keras.layers.Dense(width, activation='linear', kernel_regularizer=regularizer)(h_layer)
+            h_layer = keras.layers.advanced_activations.PReLU()(h_layer)
+        else:
+            h_layer = keras.layers.Dense(width, activation=activ, kernel_regularizer=regularizer)(h_layer)
+        if bnorm:
+            h_layer = keras.layers.BatchNormalization()(h_layer)
+        if dropout:
+            h_layer = keras.layers.Dropout(do)(h_layer)
+        if dim_in == width or i > 0:
+            if skip_connection == 'coupled_highway':
+                this_carry = carry(old_h)
+                this_transfer = keras.layers.Subtract()([old_h, this_carry])
+                old_h = keras.layers.Multiply()([this_carry, old_h])
+                h_layer = keras.layers.Multiply()([this_transfer, h_layer])
+            elif skip_connection == 'full_highway':
+                this_carry = carry(old_h)
+                this_transfer = transfer(old_h)
+                old_h = keras.layers.Multiply()([this_carry, old_h])
+                h_layer = keras.layers.Multiply()([this_transfer, h_layer])
+            h_layer = keras.layers.Add()([h_layer, old_h])
+    
+    if drop_last_only:
+        h_layer = keras.layers.Dropout(do)(h_layer)
+    # Define output
+    predicted_shift = keras.layers.Dense(units=1, activation='linear')(h_layer)
+    
+    # Define model and compile
+    mod = keras.Model(inputs=feat_in, outputs=predicted_shift)
+    mod.compile(loss='mean_squared_error', optimizer=opt)
+
+    if lsuv:
+        mod = LSUVinit(mod, feat_train[:64])
+    
+    # Save initialized weights
+    weights = mod.get_weights()
+    
+    # Initialize some outputs
+    hist_list = []
+    val_list = []
+    param_list = []
+
+    # Do pretraining to determine the best number of epochs for training
+    val_min = 10 ** 10
+    up_count = 0
+    if pretrain is not None:
+        for i in range(int(epochs/per)):
+            pt1 = mod.evaluate(feat_val, shift_val, verbose=0)
+            val_list.append(pt1)
+    
+            if pt1 < val_min:
+                val_min = pt1
+    
+            hist = mod.fit(feat_train, shift_train, batch_size=64, epochs=per)
+            hist_list += hist.history['loss']
+            pt2 = mod.evaluate(feat_val, shift_val, verbose=0)
+            
+            if pretrain == 'GL' or pretrain == 'PQ':
+                gl = 100 * (pt2/val_min - 1)
+                
+                if pretrain == 'GL':
+                    param_list.append(gl)
+                    if gl > tol:
+                        print('Broke loop at round ' + str(i))
+                        break
+                
+                if pretrain == 'PQ':
+                    strip_avg = np.array(hist.history['loss']).mean()
+                    strip_min = min(np.array(hist.history['loss']))
+                    p = 1000 * (strip_avg / strip_min - 1)
+                    pq = gl / p
+                    param_list.append(pq)
+                    if pq > tol:
+                        print('Broke loop at round ' + str(i))
+                        break
+            
+            if pretrain == 'UP':
+                if pt2 > pt1:
+                    up_count += 1
+                    param_list.append(up_count)
+                    if up_count >= tol:
+                        print('Broke loop at round ' + str(i))
+                        break
+                else:
+                    up_count = 0
+                    param_list.append(up_count)
+            
+            print('The validation loss at round ' + str(i) + ' is ' + str(pt2))
+
+        min_val_idx = min((val, idx) for (idx, val) in enumerate(val_list))[1]
+        val_epochs = max(min_val_idx * per, min_epochs)
+    else:
+        val_epochs = epochs
+    
+    
+    # Retrain model on full dataset for same number of epochs as was
+    # needed to obtain min validation loss
+    
+    mod.set_weights(weights)
+
+    mod.fit(feats, shift_norm, batch_size=64, epochs=val_epochs)
+
+    if reject_outliers is not None:
+        return rej_mean, rej_std, val_list, hist_list, param_list, mod
+    else:
+        return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
+
+
+def bidir_lstm_model(data, atom, arch, activ='prelu', lrate=0.001, mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='adam', do=0.0, lstm_do=0.0, rec_do=0.0, reg=0.0,
+                     reg_type=None, pretrain=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0, clip_norm=0, val_split=0.2, window=9, rolling=True,
+                     center_only=True, randomize=False):
+    '''Constructs a bidirectional recurrent net with LSTM cell.  Allows for deep bidirectional 
+    recurrent nets and time-distributed dense layers that follow all recurrent cells.
+    
+    data = Feature and target data (Pandas DataFrame)
+    atom = Name of atom to predict (Str)
+    activ = Activation function for dense layers - accepts "prelu" (Str)
+    arch = List with first element being a list specifying the number of neurons in each of the one-or-more
+            recurrent layers and all further elements being the number of neurons in each of the zero-or-more
+            time-distributed dense layers, omitting the time-distriuted output layer which is always present (List))
+    lrate = Learning rate for SGD (Float)
+    mom = Momentum for SGD (Float)
+    dec = Decay for SGD learning rate (Float)
+    max_epochs = Maximum number of epochs to train (Int)
+    min_epochs = Minimum number of epochs to train (Int)
+    per = Number of epochs in a test strip for pretraining (Int)
+    tol = Pretraining parameter (Float)
+    do = Dropout percentage between 0 and 1 (Float)
+    reg = Parameter for weight regularization (Float)
+    pretrain = Whether or not and how to do pretraining.  Accepts None, GL, PQ, or UP (Str)
+    bnorm = Use batch normalization (Bool)
+    lsuv = Use layer-wise sequential unit variance initialization (Bool)
+    nest = Use Nesterov momentum (Bool)
+    norm_shifts = Normalize the target shifts rather than using raw values (Bool)
+    opt_override = Override default optimization parameters (Bool)
+    clip_val = Clip values of gradients in optimizer (Float)
+    clip_norm = Clip norms of gradients in optimizer (Float)
+    val_split = Fraction of training data to set aside as validation data for early stopping
+    window = Number of residues to include in a subsequence (Int)
+    rolling = Use a rolling (overlapping) window rather than partitioning the chains into non-overlapping subsequences.
+    center_only = Predict only for the central residue of each subsequence (requires odd window)
+    randomize = Randomize the order of subsequences within a chain to confirm that state information isn't being (usefully) passed between such subsequences
+    '''
+
+    dat = data.copy()
+    feats = dat.drop(atom_names, axis=1)
+    drop_cols = ['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN']
+    for dcol in drop_cols:
+        try:
+            feats = feats.drop(dcol, axis=1)
+        except ValueError:
+            pass
+    # Need to drop the random coil and ring current columns for the other atoms if 
+    # such columns are in the data.
+    try:
+        ring_col = atom + '_RC'
+        rem1 = ring_cols.copy()
+        rem1.remove(ring_col)
+        feats = feats.drop(rem1, axis=1)
+        feats[ring_col] = feats[ring_col].fillna(value=0)
+    except KeyError:
+        pass
+    except ValueError:
+        pass
+    try:
+        rcoil_col = 'RCOIL_' + atom
+        rem2 = rcoil_cols.copy()
+        rem2.remove(rcoil_col)
+        feats = feats.drop(rem2, axis=1)
+    except ValueError:
+        pass
+    num_feats = feats.shape[1]
     
     # Get shift statistics
     if norm_shifts:
@@ -1257,17 +1511,17 @@ def bidir_lstm_model(data, atom, arch=[[30]], opt='rmsprop', epochs=100, min_epo
     # Split the data by chain and train/validation sets
     train_set, val_set = sep_by_chains(data, atom=atom, split=val_split)
     full_set = train_set + val_set
+
+    # Predicting only center residue requires odd window
+    if rolling and center_only:
+        if window % 2 is 0:
+            window += 1
     
     # Create generators for training and validation data as well as full data
-    if randomize:
-        train_gen = chain_batch_generator(data, train_set, atom, window, norm_shifts=(shifts_mean, shifts_std), rings=rings, rcoil=rcoil, randomize=True)
-        val_gen = chain_batch_generator(data, val_set, atom, window, norm_shifts=(shifts_mean, shifts_std), rings=rings, rcoil=rcoil, randomize=True)
-        full_gen = chain_batch_generator(data, full_set, atom, window, norm_shifts=(shifts_mean, shifts_std), rings=rings, rcoil=rcoil, randomize=True)
-    else:
-        train_gen = chain_batch_generator(data, train_set, atom, window, norm_shifts=(shifts_mean, shifts_std), rings=rings, rcoil=rcoil)
-        val_gen = chain_batch_generator(data, val_set, atom, window, norm_shifts=(shifts_mean, shifts_std), rings=rings, rcoil=rcoil)
-        full_gen = chain_batch_generator(data, full_set, atom, window, norm_shifts=(shifts_mean, shifts_std), rings=rings, rcoil=rcoil)
-    
+    train_gen = chain_batch_generator(data, train_set, atom, window, norm_shifts=(shifts_mean, shifts_std), rolling=rolling, randomize=randomize)
+    val_gen = chain_batch_generator(data, val_set, atom, window, norm_shifts=(shifts_mean, shifts_std), rolling=rolling, randomize=randomize)
+    full_gen = chain_batch_generator(data, full_set, atom, window, norm_shifts=(shifts_mean, shifts_std), rolling=rolling, randomize=randomize)
+
     # Count number of empty examples in train, val, and full sets
     train_count = 0
     val_count = 0
@@ -1287,21 +1541,95 @@ def bidir_lstm_model(data, atom, arch=[[30]], opt='rmsprop', epochs=100, min_epo
     train_steps = len(train_set) - train_count
     val_steps = len(val_set) - val_count
     full_steps = len(full_set) - full_count
+
+    # Define optimization procedure
+    if opt_type is 'sgd':
+        opt = keras.optimizers.SGD(lr=lrate, momentum=mom, decay=dec, nesterov=nest, clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'rmsprop':
+        if opt_override:
+            opt = keras.optimizers.RMSprop(lr=lrate, rho=mom, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.RMSprop(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adagrad':
+        if opt_override:
+            opt = keras.optimizers.Adagrad(lr=lrate, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.Adagrad(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adadelta':
+        if opt_override:
+            opt = keras.optimizers.Adadelta(lr=lrate, rho=mom, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.Adadelta(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adam':
+        if opt_override:
+            try:
+                beta1 = mom[0]
+                beta2 = mom[1]
+            except TypeError:
+                beta1 = mom
+                beta2 = mom
+                print('Only one momentum given for adam-type optimizer.  Using this value for both beta1 and beta2')
+            if nest:
+                opt = keras.optimizers.Nadam(lr=lrate, beta_1=beta1, beta_2=beta2, schedule_decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+            else:
+                opt = keras.optimizers.Adam(lr=lrate, beta_1=beta1, beta_2=beta2, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            if nest:
+                opt = keras.optimizers.Nadam(clipnorm=clip_norm, clipvalue=clip_val)
+            else:
+                opt = keras.optimizers.Adam(clipnorm=clip_norm, clipvalue=clip_val)
+    elif opt_type is 'adamax':
+        if opt_override:
+            try:
+                beta1 = mom[0]
+                beta2 = mom[1]
+            except TypeError:
+                beta1 = mom
+                beta2 = mom
+                print('Only one momentum given for adam-type optimizer.  Using this value for both beta1 and beta2')
+            opt = keras.optimizers.Adamax(lr=lrate, beta_1=mom, beta_2=mom, decay=dec, clipnorm=clip_norm, clipvalue=clip_val)
+        else:
+            opt = keras.optimizers.Adamax(clipnorm=clip_norm, clipvalue=clip_val)
+    
+    # Define weight regularizers
+    if reg_type is None:
+        regularizer = keras.regularizers.l2(0)
+    if reg_type == 'L1':
+        regularizer = keras.regularizers.l1(reg)
+    elif reg_type == 'L2':
+        regularizer = keras.regularizers.l2(reg)
+    elif reg_type == 'L1_L2':
+        try:
+            l1reg = reg[0]
+            l2reg = reg[1]
+        except TypeError:
+            l1reg = reg
+            l2reg = reg
+            print('reg_type is L1_L2 but reg was not passed a list.  Using reg for both L1 and L2')
+        regularizer = keras.regularizers.l1_l2(l1=l1reg, l2=l2reg)
+
+
+
     
     # Build model
     mod = keras.models.Sequential()
     for num_nodes in arch[0]:
-        mod.add(keras.layers.Bidirectional(keras.layers.LSTM(num_nodes, dropout=lstm_do, recurrent_dropout=rec_do, return_sequences=True), batch_input_shape=(None, window, num_feats)))
-        if dropout:
-            mod.add(keras.layers.TimeDistributed(keras.layers.Dropout(do)))
+        mod.add(keras.layers.Bidirectional(keras.layers.LSTM(num_nodes, dropout=lstm_do, recurrent_dropout=rec_do, kernel_regularizer=regularizer,
+                                                             return_sequences=True), batch_input_shape=(None, window, num_feats)))
+        if do[0]:
+            mod.add(keras.layers.TimeDistributed(keras.layers.Dropout(do[0])))
     for num_nodes in arch[1:]:
-        mod.add(keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation=activ)))
-        if prelu:
+        if activ is 'prelu':
+            mod.add(keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation='linear', kernel_regularizer=regularizer)))
             mod.add(keras.layers.TimeDistributed(keras.layers.advanced_activations.PReLU()))
-        if dropout:
-            mod.add(keras.layers.TimeDistributed(keras.layers.Dropout(do)))
-    mod.add(keras.layers.TimeDistributed(keras.layers.Dense(1, activation='linear')))
+        else:
+            mod.add(keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation=activ, kernel_regularizer=regularizer)))
+        if do[1]:
+            mod.add(keras.layers.TimeDistributed(keras.layers.Dropout(do[1])))
+    mod.add(keras.layers.TimeDistributed(keras.layers.Dense(1, activation='linear', kernel_regularizer=regularizer)))
     mod.compile(loss='mean_squared_error', optimizer=opt, sample_weight_mode='temporal')
+    
+    weights = mod.get_weights()
     
     # Initialize some outputs
     hist_list = []
@@ -1359,66 +1687,139 @@ def bidir_lstm_model(data, atom, arch=[[30]], opt='rmsprop', epochs=100, min_epo
         val_epochs = max(min_val_idx * per, min_epochs)
     else:
         val_epochs = epochs
-    
-    # Rebuild model
-    mod = keras.models.Sequential()
-    for num_nodes in arch[0]:
-        mod.add(keras.layers.Bidirectional(keras.layers.LSTM(num_nodes, dropout=lstm_do, recurrent_dropout=rec_do, return_sequences=True), batch_input_shape=(None, window, num_feats)))
-        if do:
-            mod.add(keras.layers.TimeDistributed(keras.layers.Dropout(do)))
-    for num_nodes in arch[1:]:
-        mod.add(keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation=activ)))
-        if prelu:
-            mod.add(keras.layers.TimeDistributed(keras.layers.advanced_activations.PReLU()))
-        if do:
-            mod.add(keras.layers.TimeDistributed(keras.layers.Dropout(do)))
-    mod.add(keras.layers.TimeDistributed(keras.layers.Dense(1, activation='linear')))
-    mod.compile(loss='mean_squared_error', optimizer=opt, sample_weight_mode='temporal')
+
+    mod.set_weights(weights)
     mod.fit_generator(full_gen, steps_per_epoch=full_steps, epochs=val_epochs)
     return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
     
     
 # Here, we build some evaluators to combine operations needed to get the rmsd of different types of models
-def sparta_eval(mean, std, data, model, atom, rings=False, rcoils=False):
+def fc_eval(data, model, atom, mean=0, std=1, reject_outliers=None):
+    '''Function for evaluating the performance of fully connected and residual networks.
+    
+    mean = Mean to use for standardizing the targets in data (Float)
+    std = Standard deviation to use for standardizing the targets in data (Float)
+    data = Feature and target data on which to evaluate the performance of the model (Pandas DataFrame)
+    model = Model to evaluate (Keras Model)
+    atom = Atom for which the model predicts shifts (Str)
+    reject_outliers = Shifts that differ from mean by more than this multiple of std are dropped before evaluation (Float or None)
+    '''
+    
     dat = data[data[atom].notnull()]
+    try:
+        dat = dat.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
+    except ValueError:
+        pass
+    try:
+        dat = dat.drop(['RESNAME_ip1', 'RESNAME_im1'], axis=1)
+    except ValueError:
+        pass
+
+    if reject_outliers is not None:
+        n_sig = max(reject_outliers, 0.1) # Don't accept a cutoff less than 0.1 * std
+        up_rej = mean + n_sig * std
+        low_rej = mean - n_sig * std
+        dat = dat[(dat[atom] > low_rej) & (dat[atom] < up_rej)]
+
     feats = dat.drop(atom_names, axis=1)
     
     # If ring currents or random coil shifts are in the data, drop 
     # those from the other atoms and fill any NaNs to 0
-    if rings:
+    try:
         ring_col = atom + '_RC'
         rem1 = ring_cols.copy()
         rem1.remove(ring_col)
         feats = feats.drop(rem1, axis=1)
         feats[ring_col] = feats[ring_col].fillna(value=0)
-    if rcoils:
+    except KeyError:
+        pass
+    except ValueError:
+        pass
+    try:
         rcoil_col = 'RCOIL_' + atom
         rem2 = rcoil_cols.copy()
         rem2.remove(rcoil_col)
         feats = feats.drop(rem2, axis=1)
-    
+    except ValueError:
+        pass
+
     feats = feats.values    
     shifts = dat[atom].values
     shifts_norm = (shifts - mean) / std
     mod_eval = model.evaluate(feats, shifts_norm, verbose=0)
     return np.sqrt(mod_eval) * std
 
-def branch_eval(mean, std, data, model, atom):
+
+def strucseq_branch_eval(data, model, atom, mean=0, std=1):
+    '''Function to evaluate the performance of the strucseq_branch model
+    
+    mean = Mean to use for standardizing the targets in data (Float)
+    std = Standard deviation to use for standardizing the targets in data (Float)
+    data = Feature and target data on which to evaluate the performance of the model (Pandas DataFrame)
+    model = Model to evaluate (Keras Model)
+    atom = Atom for which the model predicts shifts (Str)
+    seq_type = Encoding for sequence information - accepts "blosum" or "binary" (Str)    
+    '''
+    
     dat = data[data[atom].notnull()]
-    feats = dat.drop(atom_names, axis=1).values
-    struc_feats = dat[struc_cols].values
-    seq_feats = dat[seq_cols].values
+    feats = dat.drop(atom_names, axis=1)
+    
+    # If ring currents or random coil shifts are in the data, drop 
+    # those from the other atoms and fill any NaNs to 0
+    try:
+        ring_col = atom + '_RC'
+        rem1 = ring_cols.copy()
+        rem1.remove(ring_col)
+        feats = feats.drop(rem1, axis=1)
+        feats[ring_col] = feats[ring_col].fillna(value=0)
+    except KeyError:
+        pass
+    except ValueError:
+        pass
+    try:
+        rcoil_col = 'RCOIL_' + atom
+        rem2 = rcoil_cols.copy()
+        rem2.remove(rcoil_col)
+        feats = feats.drop(rem2, axis=1)
+    except ValueError:
+        pass
+    
+    try:
+        seq_feats = dat[seq_cols].values
+        struc_feats = feats.drop(seq_cols, axis=1).values
+    except KeyError:
+        pass
+    except ValueError:
+        pass
+    try:
+        seq_feats = dat[bin_seq_cols].values
+        struc_feats = feats.drop(bin_seq_cols, axis=1).values
+    except KeyError:
+        pass
+    except ValueError:
+        pass
     shifts = dat[atom].values
     shifts_norm = (shifts - mean) / std
-    mod_eval = model.evaluate([struc_feats, seq_feats], shifts_norm, verbose=0)
+    mod_eval = model.evaluate([struc_feats, seq_feats], shifts_norm, verbose=1)
     return np.sqrt(mod_eval) * std
+
     
-def lstm_eval(mean, std, data, model, atom, window=10, randomize=False):
+def rnn_eval(data, model, atom, mean=0, std=1, window=9, rolling=True, center_only=True, randomize=False):
+    '''Function to evaluate the performance of recurrent neural network models
+    
+    data = Feature and target data on which to evaluate the performance of the model (Pandas DataFrame)
+    model = Model to evaluate (Keras Model)
+    atom = Atom for which the model predicts shifts (Str)
+    mean = Mean to use for stadardizing the targets in the data (Float)
+    std = Standard deviation to use for standardizing the targets in the data (Float)
+    window = Size of subsequences taken from chains
+    rolling = Use rolling window to generate overlapping subsequences (Bool)
+    center_only = For rolling window, predict only the central residue (Bool)
+    randomize = Randomize the order of subsequences within chains (Bool)
+    '''
+    
     idxs = sep_by_chains(data, atom)
-    if randomize:
-        gen = chain_batch_generator(data, atom=atom, idxs=idxs, window=window, norm_shifts=(mean, std), randomize=True)
-    else:
-        gen = chain_batch_generator(data, atom=atom, idxs=idxs, window=window, norm_shifts=(mean, std))
+    gen = chain_batch_generator(data, atom=atom, idxs=idxs, window=window, norm_shifts=(mean, std), rolling=rolling, center_only=center_only, randomize=randomize)
     count = 0
     for i, chain_idx in enumerate(idxs):
         chain = data.iloc[chain_idx]
@@ -1432,7 +1833,7 @@ def lstm_eval(mean, std, data, model, atom, window=10, randomize=False):
 
 
 # Need to write a function that does k-fold cross-validation 
-def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, out='Summary', lstm=False, window=10):
+def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, per=5, out='summary', rnn=False, window=10, reuse_val_eps=False):
     '''Function to perform k-fold cross validation on a given model with fixed
     hyper-parameters.
     
@@ -1443,13 +1844,25 @@ def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, out='Summa
     model = Function that takes data and returns a trained model (Function)
     mod_args = List of arguments for model-generating function (List)
     mod_kwargs = Dictionary of keyword arguments for model-generating function (Dict)
-    lstm = Assume model takes data like an lstm (by chain) rather than by residue (Bool)
-    
+    rnn = Assume model takes data like an rnn (by chain) rather than by residue (Bool)
+    window = Number of residues in subsequences for rnn training
+    reuse_val_eps = Use validation epochs obtained in the first fold of early-stopping for subsequent folds (Bool)
     '''
+    dat = data.copy()
+    try:
+        dat = dat.drop(['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN'], axis=1)
+    except ValueError:
+        pass
+    try:
+        dat = dat.drop(['RESNAME_ip1', 'RESNAME_im1'], axis=1)
+    except ValueError:
+        pass
     test_rmsd_list = np.array([])
     train_rmsd_list = np.array([])
-    if lstm:
-        idxs = sep_by_chains(data, atom)
+    epochs_list = np.array([])
+    # Need to handle RNNs differently
+    if rnn:
+        idxs = sep_by_chains(dat, atom)
         kf = skl.model_selection.KFold(n_splits=k)
         test_rmsd_list = np.array([])
         train_rmsd_list = np.array([])
@@ -1460,8 +1873,11 @@ def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, out='Summa
                 full_train_idx = full_train_idx.append(new_idx)
             for new_idx in test_idxs[1:]:
                 full_test_idx = full_test_idx.append(new_idx)
-            traindf, testdf = data.iloc[full_train_idx], data.iloc[full_test_idx]
+            traindf, testdf = dat.iloc[full_train_idx], dat.iloc[full_test_idx]
             mean, std, val_list, history, param_list, mod = model(traindf, atom, **mod_kwargs)
+            val_arr = np.array(val_list)
+            val_eps = 5 * (np.argmin(val_arr) + 1)
+            epochs_list = np.append(epochs_list, val_eps)
             test_rmsd = feval(mean, std, testdf, mod, atom, window=window)
             train_rmsd = feval(mean, std, traindf, mod, atom, window=window)
             test_rmsd_list = np.append(test_rmsd_list, test_rmsd)
@@ -1469,356 +1885,94 @@ def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, out='Summa
     
     else:        
         kf = skl.model_selection.KFold(n_splits=k)
-        for train_index, test_index in kf.split(data):
-            train_df, test_df = data.iloc[train_index], data.iloc[test_index]
-            mean, std, val_list, history, mod = model(train_df, atom, *mod_args, **mod_kwargs)
-            test_rmsd = feval(mean, std, test_df, mod, atom)
+        count=0
+        for train_index, test_index in kf.split(dat):
+            # Define this fold
+            train_df, test_df = dat.iloc[train_index], dat.iloc[test_index]
+            # Modify the mod_kwargs after the first round if want to reuse validation epochs obtained
+            # in the first round as the number of epochs for subsequent rounds
+            if reuse_val_eps and (count > 0):
+                mod_kwargs['pretrain'] = None
+                mod_kwargs['epochs'] = val_eps
+            # Train the model on this fold
+            mean, std, val_list, history, params, mod = model(train_df, atom, *mod_args, **mod_kwargs)
+            
+            # Get validation epochs if pretraining
+            val_arr = np.array(val_list)
+            try: 
+                val_eps = 5 * (np.argmin(val_arr) + 1)
+            except ValueError:
+                pass
+            # Append validation epochs to list if this info is available
+            try:
+                epochs_list = np.append(epochs_list, val_eps)
+            except NameError:
+                pass
+            # Get the value of reject_outliers from mod_kwargs
+            try:
+                rej_out = mod_kwargs['reject_outliers']
+            except KeyError:
+                rej_out = None
+            test_rmsd = feval(test_df, mod, atom, mean=mean, std=std, reject_outliers=rej_out)
             test_rmsd_list = np.append(test_rmsd_list, test_rmsd)
-            train_rmsd = feval(mean, std, train_df, mod, atom)
+            train_rmsd = feval(train_df, mod, atom, mean=mean, std=std, reject_outliers=rej_out)
             train_rmsd_list = np.append(train_rmsd_list, train_rmsd)
+            print('Results this round for atom ' + atom + ' are ' + str([val_eps, train_rmsd, test_rmsd]))
+            count += 1
 
     train_rmsd = train_rmsd_list.mean()
     train_rmsd_spread = train_rmsd_list.std()
     test_rmsd = test_rmsd_list.mean()
     test_rmsd_spread = test_rmsd_list.std()
+    avg_epochs = epochs_list.mean()
     if out=='summary':
-        return train_rmsd, test_rmsd, train_rmsd_spread, test_rmsd_spread
+        return avg_epochs, train_rmsd, test_rmsd, train_rmsd_spread, test_rmsd_spread
     if out=='full':
-        return train_rmsd_list, test_rmsd_list
+        return epochs_list, train_rmsd_list, test_rmsd_list
         
-        
-# We can check that this works
-mod_args = [[100, 60, 30], 0.01, 0.70, 5*10**-6, 100, 2000, 25, 10**-2]
-mod_kwargs = {'do' : 0.2, 'wreg' : 0, 'activ' : 'linear', 'pretrain' : True, 'bnorm' : True, 'nest' : True, 'lsuv' : True, 'rcoil' : False, 'rccs_feat' : False}
-ret = kfold_crossval(3, combined_clean_bmrb, 'C', sparta_eval, deep_model_prelu, mod_args, mod_kwargs)
 
-
-# Note, the alternative (manual) evaluation of the rmsd below doesn't work
-# unless you reshape the arrays to be of the same size as shifts is (N,) 
-# while preds is (N,1).  I've discovered this at least twice now so don't forget!
-
-#def sparta_eval2(mean, std, data, model, atom):
-#    dat = data[data[atom].notnull()]
-#    feats = dat.drop(atom_names, axis=1).values
-#    shifts = dat[atom].values
-#    preds = model.predict(feats)
-#    preds = preds * std + mean
-#    sq = (preds - shifts) ** 2
-#    return sq.mean()
-#
-#
-#def sparta_eval3(mean, std, data, model, atom):
-#    dat = data[data[atom].notnull()]
-#    feats = dat.drop(atom_names, axis=1).values
-#    shifts = dat[atom].values
-#    shifts_norm = (shifts - mean) / std
-#    preds = model.predict(feats)
-#    sq = (preds - shifts_norm) ** 2
-#    return sq.mean()
-
-
-# Below are some random tests to check errors for different nets by hand
-cmean, cstd, cval_list, chist_list, sparta_cmod = sparta_model(train_data, 'C', 25000, 100, 5*10**-3)
-hmean, hstd, hval_list, hhist_list, sparta_hmod = sparta_model(train_data, 'H', 25000, 100, 5*10**-3)
-nmean, nstd, nval_list, nhist_list, sparta_nmod = sparta_model(train_data, 'N', 25000, 100, 5*10**-3)
-camean, castd, caval_list, cahist_list, sparta_camod = sparta_model(train_data, 'CA', 25000, 100, 5*10**-3)
-cbmean, cbstd, cbval_list, cbhist_list, sparta_cbmod = sparta_model(train_data, 'CB', 25000, 100, 10**-2)
-hamean, hastd, haval_list, hahist_list, sparta_hamod = sparta_model(train_data, 'HA', 25000, 100, 5*10**-3)
-
-cmean, cstd, redo_cval_list3, redo_deep_chist_list3, deep_mod_relu= deep_model(bin_rcoil_diff_traindf_normdata, 'CB', 'relu', [100, 60, 30], 0.01, 0.70, 5*10**-6, 50, 2000, 25, 10**-2, do=0.2, wreg=0, pretrain=True, bnorm=True, nest=True, lsuv=True)
-cmean, cstd, cval_list0, chist_list0, cparam_list0, deep_mod1= deep_model_prelu_test(traindf_fcoils_normdata, 'CB', [100, 60, 30], 0.01, 0.70, 5*10**-6, 1000, per=5, tol=10, do=0.2, wreg=0, pretrain='PQ', bnorm=True, nest=True, rcoil=True, rings=True)
-cmean, cstd, redo_cval_list2, redo_deep_chist_list2, deep_mod2= deep_model_prelu(train_data, 'C', [100, 60, 30], 0.01, 0.70, 5*10**-6, 50, 2000, 25, 10**-2, do=0.2, wreg=0, pretrain=True, bnorm=True, dropout=True, nest=True, lsuv=True)
-
-
-branch_arch = [[60, 50, 30], [60, 50, 30], 30]
-cmean, cstd, redo_cval_list3, redo_deep_chist_list3, branch_mod1 = branch_model('relu', branch_arch, 0.01, 0.70, 5*10**-6, train_data, 'C', 50, 2000, 25, 10**-2, do=0.2, reg=0, pretrain=True, bnorm=True, dropout=True, nest=True)
-
-c_error = sparta_eval(cmean, cstd, testdf_fcoils_normdata, deep_mod1, 'CB', rings=True, rcoils=True)
-h_error = sparta_eval(hmean, hstd, test_data, sparta_hmod, 'H')
-n_error = sparta_eval(nmean, nstd, test_data, sparta_nmod, 'N')
-ca_error = sparta_eval(camean, castd, test_data, sparta_camod, 'CA')
-cb_error = sparta_eval(cbmean, cbstd, test_data, sparta_cbmod, 'CB')
-ha_error = sparta_eval(hamean, hastd, test_data, sparta_hamod, 'HA')
-
-training_error = branch_eval(cmean, cstd, train_data, branch_mod1, 'C')
-testdat_error = branch_eval(cmean, cstd, test_data, branch_mod1, 'C')
-
-sparta_eval(nmean, nstd, train_data, sparta_nmod, 'N')
-sparta_eval(cmean, cstd, test_data, sparta_cmod, 'C')
-sparta_eval(hmean, hstd, train_data, sparta_hmod, 'H')
-sparta_eval(camean, castd, train_data, sparta_camod, 'CA')
-sparta_eval(cbmean, cbstd, train_data, sparta_cbmod, 'CB')
-sparta_eval(hamean, hastd, train_data, sparta_hamod, 'HA')
-
-
-
-# A loop to try different hyper-parameters on dense nets
-archs = [[100, 60, 30]]
-drops = [0.4]
-lrates = [0.005, 0.01, 0.05, 0.1]
-decays = [10**-6, 10**-5, 10**-4]
-momenta = [.7, .9, .95]
-activs = ['tanh', 'relu']
-nester = [True]
-
-results = []
-for ip in drops:
-    for i in lrates:
-        for j in decays:
-            for k in activs:
-                for l in momenta:
-                    for m in nester:
-                        cmean, cstd, cval_list3, deep_chist_list3, deep100603015_cmod_bndo = deep_model(k, [100, 60, 30], i, l, j, train_data, 'C', 
-                                                                                            min_epochs=50, max_epochs=2000, per=25, tol=10**-2, do=ip, reg=0.01, bnorm=True, dropout=True, nest=m)
-                        min_val_idx = min((val, idx) for (idx, val) in enumerate(cval_list3))[1]
-                        val_epochs = max(min_val_idx * 25, 50)
-                        training_error = np.sqrt(sparta_eval(cmean, cstd, train_data, deep100603015_cmod_bndo, 'C')) * cstd
-                        testdat_error = np.sqrt(sparta_eval(cmean, cstd, test_data, deep100603015_cmod_bndo, 'C')) * cstd
-                        res = [[100, 60, 30], i, j, k, l, m, ip, val_epochs, training_error, testdat_error]
-                        print('Finished round ' + str(res))
-                        results.append(res)
-        resdf = pd.DataFrame(results, columns=['Architecture', 'Learning_Rate', 'Decay', 'Activation', 'Momentum', 'Nesterov', 'Dropout', 'Epochs', 'Training_Error', 'Test_Error'])
-        resdf.to_pickle('/Users/kcbennett/Documents/Git_Collaborations_THG/shiftpred/hyper_search2_reg.pkl')
-            
-            
-results_df = pd.DataFrame(results, columns=['Architecture', 'Learning_Rate', 'Decay', 'Activation', 'Momentum', 'Nesterov', 'Dropout', 'Epochs', 'Training_Error', 'Test_Error'])
-results_df.to_pickle('/Users/kcbennett/Documents/Git_Collaborations_THG/shiftpred/hyper_search.pkl')         
-
-
-# A loop to record results of prelu networks on different representations of the data (normalized, differenced, binary, etc.)     
-prelu_results = []
-for atom in ['H', 'CA', 'CB', 'C', 'N']:
-#    mean, std, val_list, hist_list, mod = sparta_model(clean_bmrb_traindf_data, atom, 800, 25, 5*10**-3)
-#    train_err = sparta_eval(mean, std, clean_bmrb_traindf_data, mod, atom)
-#    test_err = sparta_eval(mean, std, clean_bmrb_testdf_data, mod, atom)
-#    res0 = [atom, 'Our_SPARTA+',  'Blosum62', 'Raw', train_err, test_err]
-    mean0, std0, val_list0, hist_list0, param_list0, mod0 = deep_model_prelu_test(traindf_fcoils_normdata, atom, [100, 60, 30], 0.01, 0.70, 5*10**-6, 50, 1000, per=5, tol=2, do=0.2, wreg=0, pretrain='PQ', bnorm=True, nest=True, rings=True, rcoil=True)
-    train_err0 = sparta_eval(mean0, std0, traindf_fcoils_normdata, mod0, atom, rings=True, rcoils=True)
-    test_err0 = sparta_eval(mean0, std0, testdf_fcoils_normdata, mod0, atom, rings=True, rcoils=True)
-    res0 = [atom, 'Deep_Prelu', 'Blosum62', 'Normalized', 'Feat', 'Feat', train_err0, test_err0]
-
-    mean1, std1, val_list1, hist_list1, param_list1, mod1 = deep_model_prelu_test(traindf_bin_fcoils_data, atom, [100, 60, 30], 0.01, 0.70, 5*10**-6, 50, 1000, per=5, tol=2, do=0.2, wreg=0, pretrain='PQ', bnorm=True, nest=True, rings=True, rcoil=True)
-    train_err1 = sparta_eval(mean1, std1, traindf_bin_fcoils_normdata, mod1, atom, rings=True, rcoils=True)
-    test_err1 = sparta_eval(mean1, std1, testdf_bin_fcoils_normdata, mod1, atom, rings=True, rcoils=True)
-    res1 = [atom, 'Deep_Prelu', 'Binary', 'Raw', 'Feat', 'Feat', train_err1, test_err1]
-
-    mean2, std2, val_list2, hist_list2, param_list2, mod2 = deep_model_prelu_test(traindf_bin_fcoils_normdata, atom, [100, 60, 30], 0.01, 0.70, 5*10**-6, 50, 1000, per=5, tol=2, do=0.2, wreg=0, pretrain='PQ', bnorm=True, nest=True, rings=True, rcoil=True)
-    train_err2 = sparta_eval(mean2, std2, traindf_bin_fcoils_normdata, mod2, atom, rings=True, rcoils=True)
-    test_err2 = sparta_eval(mean2, std2, testdf_bin_fcoils_normdata, mod2, atom, rings=True, rcoils=True)
-    res2 = [atom, 'Deep_Prelu', 'Binary', 'Normalized', 'Feat', 'Feat', train_err2, test_err2]
-
-    mean3, std3, val_list3, hist_list3, param_list3, mod3 = deep_model_prelu_test(traindf_coildiff_normdata, atom, [100, 60, 30], 0.01, 0.70, 5*10**-6, 50, 1000, per=5, tol=2, do=0.2, wreg=0, pretrain='PQ', bnorm=True, nest=True, rings=True)
-    train_err3 = sparta_eval(mean3, std3, traindf_coildiff_normdata, mod3, atom, rings=True)
-    test_err3 = sparta_eval(mean3, std3, testdf_coildiff_normdata, mod3, atom, rings=True)
-    res3 = [atom, 'Deep_Prelu', 'Blosum62', 'Normalized', 'Feat', 'Diff', train_err3, test_err3]
+# Now let's write a couple functions to do variable importance testing.
+# First, we'll write an ablater function that runs k-fold cross validation
+# on the data with given feature(s) removed.
+def varimportance_ablater(feats, k, data, atom, feval, model, mod_args, mod_kwargs):
+    '''Function to remove (ablate) specified feature(s) from the data and then perform
+    k-fold cross validation with a given set of hyper-parameters.  Measures reliance of
+    the entire algorithm (including learning process) on the ablated features by comparing
+    to performance on full data
     
-    mean4, std4, val_list4, hist_list4, param_list4, mod4 = deep_model_prelu_test(traindf_bin_coildiff_data, atom, [100, 60, 30], 0.01, 0.70, 5*10**-6, 50, 1000, per=5, tol=2, do=0.2, wreg=0, pretrain='PQ', bnorm=True, nest=True, rings=True)
-    train_err4 = sparta_eval(mean4, std4, traindf_bin_coildiff_data, mod4, atom, rings=True)
-    test_err4 = sparta_eval(mean4, std4, testdf_bin_coildiff_data, mod4, atom, rings=True)
-    res4 = [atom, 'Deep_Prelu', 'Binary', 'Raw', 'Feat', 'Diff', train_err4, test_err4]
+    feats = Names of columns (features) to be ablated (List)
+    k = Number of folds for the cross validation (Int)
+    data = Features and targets (Pandas DataFrame)
+    atom = Name of atom for which to predict shifts (Str)
+    feval = Function to evaluate rmsd for the model (Function)
+    model = Function that takes data and returns a trained model (Function)
+    mod_args = List of arguments for model-generating function (List)
+    mod_kwargs = Dictionary of keyword arguments for model-generating function (Dict)
+    '''
+    df = data.copy()
+    df = df.drop(feats, axis=1)
+    train_rmsd, test_rmsd, train_rmsd_spread, test_rmsd_spread = kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs)
+    return train_rmsd, test_rmsd, train_rmsd_spread, test_rmsd_spread
+
+
+# Next we'll write a function that scrambles the values for specified feature(s) and then 
+# evaluates the performance of a given model 
+def varimportance_shuffler(feats, data, feval, mean, std, mod, atom):
+    '''Function to test the reliance of a given model on specified feature(s).  It
+    does this by shuffling the values in the data columns associated with the given 
+    feature(s) and then evaluating the performance of the model on this shuffled data
     
-    mean5, std5, val_list5, hist_list5, param_list5, mod5 = deep_model_prelu_test(traindf_bin_coildiff_normdata, atom, [100, 60, 30], 0.01, 0.70, 5*10**-6, 50, 1000, per=5, tol=2, do=0.2, wreg=0, pretrain='PQ', bnorm=True, nest=True, rings=True)
-    train_err5 = sparta_eval(mean5, std5, traindf_bin_coildiff_normdata, mod5, atom, rings=True)
-    test_err5 = sparta_eval(mean5, std5, testdf_bin_coildiff_normdata, mod5, atom, rings=True)
-    res5 = [atom, 'Deep_Prelu', 'Binary', 'Normalized', 'Feat', 'Diff', train_err5, test_err5]
-#    mean, std, val_list, hist_list, mod = deep_model_prelu(bin_clean_bmrb_traindf_data, atom, [100, 60, 30], 0.01, 0.70, 5*10**-6, 100, 2000, 25, 10**-2, do=0.2, wreg=0, pretrain=True, bnorm=True, nest=True)
-#    train_err2 = sparta_eval(mean, std, bin_clean_bmrb_traindf_data, mod, atom)
-#    test_err2 = sparta_eval(mean, std, bin_clean_bmrb_testdf_data, mod, atom)
-#    min_val_idx = min((val, idx) for (idx, val) in enumerate(val_list))[1]
-#    val_epochs2 = max(min_val_idx * 25, 100)
-#    res2 = [atom, 'Deep_Prelu', 'Binary', 'Raw', train_err2, test_err2, val_epochs2]
-#    mean, std, val_list, hist_list, mod = deep_model_prelu(clean_bmrb_traindf_white, atom, [100, 60, 30], 0.01, 0.70, 5*10**-6, 100, 2000, 25, 10**-2, do=0.2, wreg=0, pretrain=True, bnorm=True, nest=True)
-#    min_val_idx = min((val, idx) for (idx, val) in enumerate(val_list))[1]
-#    val_epochs3 = max(min_val_idx * 25, 100)
-#    train_err3 = sparta_eval(mean, std, clean_bmrb_traindf_white, mod, atom)
-#    test_err3 = sparta_eval(mean, std, clean_bmrb_testdf_white, mod, atom)
-#    res3 = [atom, 'Deep_Prelu', 'Blosum62', 'Normalized', train_err3, test_err3, val_epochs3]
-    print('Finished atom ' + atom)
-    prelu_results.append(res0)
-    prelu_results.append(res1)
-    prelu_results.append(res2)
-    prelu_results.append(res3)
-    prelu_results.append(res4)
-    prelu_results.append(res5)
-    prelu_resdf = pd.DataFrame(prelu_results, columns=['Atom', 'Model', 'Seq_encoding', 'Feat_data', 'Rings', 'RCoils', 'Train_err', 'Test_err'])
-    prelu_resdf.to_pickle('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/DeepPrelu_ringcoil_Results.pkl')
-#    prelu_resdf.to_pickle('/Users/kcbennett/Documents/Git_Collaborations_THG/chemshift_prediction/DeepPrelu_ringcoil_Results.pkl')
-    
-prelu_resdf = pd.read_pickle('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/DeepPrelu_Results.pkl')
-prelu_resdf2 = pd.read_pickle('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/DeepPrelu_Results2.pkl')
-for i in range(len(atom_names)):
-    res = [atom_names[i], 'SPARTA+', 'Blosum62', 'Raw', np.nan, sparta_results[i]]
-    prelu_results.append(res)
-resdf = pd.DataFrame(prelu_results, columns=['Atom', 'Model', 'Seq_encoding', 'Feat_data', 'Train_err', 'Test_err'])
-resdf1 = pd.concat([prelu_resdf0, resdf], ignore_index=True)    
-prelu_resdf2.loc[0, ['Atom', 'Model', 'Seq_encoding', 'Feat_data']].values
-prelu_resdf[(prelu_resdf['Seq_encoding'] == prelu_resdf2.loc[0, 'Seq_encoding']) & (prelu_resdf['Feat_data'] == prelu_resdf2.loc[0, 'Feat_data'])] = prelu_resdf2.values
-prelu_resdf3 = prelu_resdf.copy()
-resdf.to_pickle('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/DeepPrelu_results2.pkl')
-resdf1.sort_values(by=['Atom', 'Model', 'Seq_encoding', 'Feat_data']).to_csv('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/DeepPrelu_results_csv.csv')
-resdf.to_csv('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/DeepPrelu_results_csv.csv')
-
-resdf.insert(loc=4, column='RC', value='False')
-resdf.insert(loc=5, column='Target', value='Raw')
-# Compare to SPARTA+ architecture
-for atom in ['HA', 'H', 'CA', 'CB', 'C']:
-    mean0, std0, val_list0, hist_list0, param_list0, mod0 = sparta_model(bin_rcoil_diff_traindf_normdata, atom, 400, per=5, tol=2, pretrain='PQ', rings=True)
-    train_err0 = sparta_eval(mean0, std0, bin_rcoil_diff_traindf_normdata, mod0, atom, rings=True)
-    test_err0 = sparta_eval(mean0, std0, bin_rcoil_diff_testdf_normdata, mod0, atom, rings=True)
-    res0 = [atom, 'Deep_Prelu', 'Blosum62', 'Normalized', 'Feat', 'Feat', train_err0, test_err0]
-    new_sparta_results.append(res0)
-
-
-
-# Below are some auxilliary considerations relevant for RNNs
-
-# Some quick stuff to check the distribution of chain lengths    
-test_chain_lengths = []
-train_chain_lengths = []
-for i in range(61):
-    chain_len = len(list(clean_bmrb_testdf.groupby(['FILE_ID', 'CHAIN']).groups.values())[i])
-    test_chain_lengths.append(chain_len)
-    
-test_chain_lengths
-for i in range(233):
-    chain_len = len(list(clean_bmrb_traindf.groupby(['FILE_ID', 'CHAIN']).groups.values())[i])
-    train_chain_lengths.append(chain_len)
-
-# Need to count the number of skipped chains for each atom    
-test_count_dict = {}
-for atom in atom_names:
-    count = 0
-    for i, chain_idx in enumerate(test_idxs):
-        chain = reslevel_testdf.iloc[chain_idx]
-        weights = chain[atom].notnull()
-        weights *= 1
-        if np.array_equal(weights, np.zeros_like(weights)):
-            count += 1
-    test_count_dict[atom] = len(test_idxs) - count
-
-train_count_dict = {}
-for atom in atom_names:
-    count = 0
-    for i, chain_idx in enumerate(train_idxs):
-        chain = reslevel_traindf.iloc[chain_idx]
-        weights = chain[atom].notnull()
-        weights *= 1
-        if np.array_equal(weights, np.zeros_like(weights)):
-            count += 1
-    train_count_dict[atom] = len(train_idxs) - count
-
-# A loop to record errors on LSTMs
-lstm_results = []
-param_plots = []
-val_plots = []
-hist_plots = []
-for atom in atom_names:
-    at_mean, at_std, at_vals, at_hist, at_params, at_mod = bidir_lstm_model(reslevel_traindf, atom, do=0.2, lstm_do=0.2, prelu=True, epochs=300, opt='nadam', pretrain='PQ', tol=2, arch=[[50], 30])
-    test_idxs = sep_by_chains(reslevel_testdf, atom)
-    test_gen = chain_batch_generator(reslevel_testdf, atom=atom, idxs=test_idxs, window=10, norm_shifts=(at_mean, at_std))
-    err = np.sqrt(at_mod.evaluate_generator(test_gen, steps=test_count_dict[atom])) * at_std
-    lstm_results.append([atom, 'nadam', 'PQ=2', '[[50], 30]', True, 0.2, 0.2, len(at_hist), err])
-    param_plots.append(at_params)
-    val_plots.append(at_vals)
-    hist_plots.append(at_hist)
-    
-# Some by-hand LSTM testing  
-mod_test = keras.models.Sequential()
-mod_test.add(keras.layers.Bidirectional(keras.layers.LSTM(30, return_sequences=True), batch_input_shape=(None, 10, 110)))
-mod_test.add(keras.layers.TimeDistributed(keras.layers.Dense(1, activation='linear')))
-mod_test.compile(loss='mean_squared_error', optimizer='rmsprop', sample_weight_mode='temporal')
-mod_test.fit_generator(example_train_generator, steps_per_epoch=len(train_idxs), epochs=100)
-
-test_idxs = sep_by_chains(reslevel_testdf, 'C')
-test_gen = chain_batch_generator(reslevel_testdf, atom='C', idxs=test_idxs, window=20, norm_shifts=(at_mean, at_std))
-np.sqrt(at_mod.evaluate_generator(test_gen, steps=test_count_dict['C'])) * at_std
-
-full_train_idxs = sep_by_chains(reslevel_traindf, 'C')
-full_train_gen = chain_batch_generator(reslevel_traindf, atom='C', idxs=full_train_idxs, window=20, norm_shifts=(at_mean, at_std))
-np.sqrt(at_mod.evaluate_generator(full_train_gen, steps=test_count_dict['C'])) * at_std
-# NOTE -- Try both a masking layer as well as using sample_weights for the fit_generator
-
-at_mean, at_std, at_vals, at_hist, at_params, at_mod = bidir_lstm_model(restraindf_coildiff_norm, 'C', do=0.2, lstm_do=0.2, prelu=True, epochs=300, opt='nadam', pretrain='PQ', tol=2, arch=[[50], 30])
-lstm_eval(at_mean2, at_std2, restestdf_coildiff_norm, at_mod2, 'C')
-
-
-
-# Below is some code for plotting errors.  May be useful again
-
-rates = [0.005, 0.01, 0.05, 0.1]
-momenta = [0.7, 0.9, 0.95]
-for act in activs:
-    for dec in decays:
-        train_errs = resdf1.loc[(resdf1['Decay'] == dec) & (resdf1['Activation'] == act)]['Training_Error']
-        test_errs = resdf1.loc[(resdf1['Decay'] == dec) & (resdf1['Activation'] == act)]['Test_Error']
-        fig, ax = plt.subplots()
-        rects1 = ax.bar(ind, train_errs, width,
-                        color='SkyBlue', label='Training')
-        rects2 = ax.bar(ind, test_errs, width,
-                        color='IndianRed', label='Testing', alpha=0.5)
-        
-        # Add some text for labels, title and custom x-axis tick labels, etc.
-        ax.set_ylabel('Loss (MSE)')
-        ax.set_xlabel('Learning Rate (Momentum = [0.7, 0.9, 0.95])')
-        ax.set_title(act + ', Drop=20, Dec=' + str(dec))
-        ax.set_xticks([2, 6, 10, 14])
-        ax.set_xticklabels([str(i) for i in rates])
-        ax.axhline(1.37)
-        ax.axhline(.974)
-        path = '/home/bennett/Documents/Git_Collaborations_THG/shiftpred/performance_pics/'
-        file = act + 'Drop20' + 'Dec' + str(dec)
-        plt.savefig(path + file)
-
-
-
-
-
-
-
-resdf1 = pd.read_pickle('/home/bennett/Documents/Git_Collaborations_THG/shiftpred/hyper_search.pkl')
-train_errs = resdf1.loc[(resdf1['Decay'] == 10**-5) & (resdf1['Activation'] == 'relu')]['Training_Error']
-test_errs = resdf1.loc[(resdf1['Decay'] == 10**-5) & (resdf1['Activation'] == 'relu')]['Test_Error']
-
-fig, ax = plt.subplots()
-ind = np.array([int(i/3)+i+1 for i in range(len(train_errs))])  # the x locations for the groups
-width = 0.45  # the width of the bars
-
-rects1 = ax.bar(ind, train_errs, width,
-                color='SkyBlue', label='Training')
-rects2 = ax.bar(ind, test_errs, width,
-                color='IndianRed', label='Test', alpha=0.5)
-
-# Add some text for labels, title and custom x-axis tick labels, etc.
-ax.set_ylabel('Loss (MSE)')
-ax.set_xlabel('Learning Rate (Momentum = [0.7, 0.9, 0.95])')
-ax.set_title('Relu, Drop=20%, Dec=10^-6')
-ax.set_xticks([2, 6, 10, 14])
-ax.set_xticklabels([str(i) for i in rates])
-ax.axhline(1.37)
-ax.axhline(.974)
-ax.
-#path = '/home/bennett/Documents/Git_Collaborations_THG/shiftpred/performance_pics/'
-#file = act + ', Drop=' + str(drop) + ', Dec=' + str(dec)
-#plt.savefig(path + file)
-
-plt.show()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    feats = Feature(s) to be shuffled (List)
+    data = Data consisting of features and targets (Pandas DataFrame)
+    feval = Function to evaluate the rmsd (Function)
+    mean = Mean of the shifts to be predicted (Float)
+    std = Standard deviation of the shifts to be predicted (Float)
+    mod = A trained model (Keras Model)
+    atom = Name of atom for which to predict shifts (Str)
+    '''
+    for feat in feats:
+        data[feat] = np.random.permutation(data[feat])
+    err = feval(mean, std, data, mod, atom)
+    return err
 
 
