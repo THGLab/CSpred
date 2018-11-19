@@ -11,7 +11,7 @@ import random
 import sklearn as skl
 import keras
 from Bio.SeqUtils import IUPACData
-from lsuv_init import LSUVinit
+from chemshift_prediction.lsuv_init import LSUVinit
 
 atom_names = ['HA', 'H', 'CA', 'CB', 'C', 'N']
 sparta_results = [0.25, 0.49, 0.94, 1.14, 1.09, 2.45] # Advertised performance of SPARTA+
