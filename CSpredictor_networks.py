@@ -1709,10 +1709,10 @@ def bidir_lstm_model(data, atom, arch, activ='prelu', lrate=0.001, mom=0, dec=10
 
     dat = data.copy()
     feats = dat.drop(atom_names, axis=1)
-    drop_cols = ['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN']
-    for dcol in drop_cols:
+    #drop_cols = ['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN']
+    for col in cols_to_drop:
         try:
-            feats = feats.drop(dcol, axis=1)
+            feats = feats.drop(col, axis=1)
         except ValueError:
             pass
     # Need to drop the random coil and ring current columns for the other atoms if 
