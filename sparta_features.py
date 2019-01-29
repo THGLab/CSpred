@@ -726,6 +726,7 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
         col_names += ['BLOSUM62_NUM_'+AAlet3[i] for i in range(20)]
         col_names += ['HSE_CA' + i  for i in ['_U', '_D', '_Angle']]
         col_names += ['HSE_CB' + i for i in ['_U', '_D']]
+
         
         data = []
         for model in structure:
@@ -733,7 +734,7 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
             if hse:
                 hseca_calc = PDB.HSExposureCA(model)
                 hsecb_calc = PDB.HSExposureCB(model)
-                
+            
             for chain in model:
                 dihedrals = self.calc_phi_psi(chain)
                 l = 0
@@ -764,6 +765,7 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
                             hsecb = 2 * [0]
                         row_data += hseca
                         row_data += hsecb
+
                     
                     try:
                         prevOatom = res['O']
@@ -776,7 +778,7 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
         return df
                    
 
-    def df_from_file_3res(self, fpath, hbrad=3.0, s2rad=10.0, rcshifts=True):
+    def df_from_file_3res(self, fpath, hbrad=3.0, s2rad=10.0, rcshifts=True, hse=False):
         
         '''Function to create a pandas DataFrame of SPARTA+ features 
         from a given PDB file.
@@ -792,12 +794,20 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
             as some preliminary file and residue ID info
         '''
             
-        # Get SPARTA+ features with single-residue function and then define column names
-        df_1res = self.df_from_file_1res(fpath, hbrad, s2rad)
+        #Names of columns from single-residue DataFrame for easier access
+        phipsi_names = [i+j for i in ['PHI_', 'PSI_'] for j in ['COS', 'SIN']]
+        chi_names = [i+j for i in ['CHI1_', 'CHI2_'] for j in ['COS', 'SIN', 'EXISTS']]
+        hbprev_names = ['O_'+j for j in ['d_HA', 'COS_H', 'COS_A', 'EXISTS']]
+        hb_names = [i+j for i in ['Ha_', 'HN_', 'O_'] for j in ['d_HA', 'COS_H', 'COS_A', 'EXISTS']]
+        hbnext_names = ['HN_'+j for j in ['d_HA', 'COS_H', 'COS_A', 'EXISTS']]
+        hse_names = ['HSE_CA' + i  for i in ['_U', '_D', '_Angle']]
+        hse_names += ['HSE_CB' + i for i in ['_U', '_D']]
+
+        # Define column names for new DataFrame
         col_id = ['FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM']
-        col_phipsi = ['PSI_'+i for i in ['COS_i-1', 'SIN_i-1']]
+        col_phipsi = [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i-1', 'SIN_i-1']]
         col_phipsi += [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i', 'SIN_i']]
-        col_phipsi += ['PHI_'+i for i in ['COS_i+1', 'SIN_i+1']]
+        col_phipsi += [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i+1', 'SIN_i+1']]
         col_chi = [i+j+k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_', 'CHI2_'] for j in ['COS', 'SIN', 'EXISTS']]
         col_hbprev = ['O_'+i+'_i-1' for i in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
         col_hbond = [i+j+'_i' for i in ['Ha_', 'HN_', 'O_'] for j in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
@@ -810,15 +820,13 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
         if rcshifts:
             col_rccs = ['RC_' + i for i in atom_names]
             col_names += col_rccs
+        if hse:
+            col_hse = [hse_names[i] + j for j in ['_i-1', '_i', '_i+1'] for i in range(5)]
+            col_names += col_hse
         
         df = pd.DataFrame(columns=col_names)
-        
-        #Names of columns from single-residue DataFrame for easier access
-        phipsi_names = [i+j for i in ['PHI_', 'PSI_'] for j in ['COS', 'SIN']]
-        chi_names = [i+j for i in ['CHI1_', 'CHI2_'] for j in ['COS', 'SIN', 'EXISTS']]
-        hbprev_names = ['O_'+j for j in ['d_HA', 'COS_H', 'COS_A', 'EXISTS']]
-        hb_names = [i+j for i in ['Ha_', 'HN_', 'O_'] for j in ['d_HA', 'COS_H', 'COS_A', 'EXISTS']]
-        hbnext_names = ['HN_'+j for j in ['d_HA', 'COS_H', 'COS_A', 'EXISTS']]
+        # Get SPARTA+ features with single-residue function 
+        df_1res = self.df_from_file_1res(fpath, hbrad, s2rad, hse=hse)
         
         for i in range(len(df_1res)):
             # Assign ID columns
@@ -827,38 +835,48 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
             # Assign column variables containing data from previous residue in the PDB file
             if i == 0:        
                 blosum_prev = [0]*20
-                psi_prev= [0, 0]
+                psi_prev = [0, 0]
+                phi_prev = [0, 0]
                 chi_prev = [0]*6
                 hb_prev = [0]*4
                 s2_prev = 0
+                hse_prev = 5*[0]
             else:
                 blosum_prev = list(df_1res.loc[i-1, blosum_names].values)
                 psi_prev = [df_1res.loc[i-1, 'PSI_COS'], df_1res.loc[i-1, 'PSI_SIN']]
+                phi_prev = [df_1res.loc[i-1, 'PHI_COS'], df_1res.loc[i-1, 'PHI_SIN']]
                 chi_prev = list(df_1res.loc[i-1, chi_names].values)
                 hb_prev = list(df_1res.loc[i-1, hbprev_names].values)
                 s2_prev = df_1res.loc[i-1, 'S2']
+                if hse:
+                    hse_prev = df_1res.loc[i-1, hse_names]
             
             # Assign column variables containing data from next residue in the PDB file
             if i == len(df_1res)-1:
                 blosum_next = [0]*20
-                phi_next= [0, 0]
+                psi_next = [0, 0]
+                phi_next = [0, 0]
                 chi_next = [0]*6
                 hb_next = [0]*4
                 s2_next = 0
+                hse_next = 5*[0]
                 if rcshifts:
                     res_next = 'ALA'
             else:
                 blosum_next = list(df_1res.loc[i+1, blosum_names].values)
+                psi_next = [df_1res.loc[i+1, 'PSI_COS'], df_1res.loc[i+1, 'PSI_SIN']]
                 phi_next = [df_1res.loc[i+1, 'PHI_COS'], df_1res.loc[i+1, 'PHI_SIN']]
                 chi_next = list(df_1res.loc[i+1, chi_names].values)
                 hb_next = list(df_1res.loc[i+1, hbnext_names].values)
                 s2_next = df_1res.loc[i+1, 'S2']
+                if hse:
+                    hse_next = df_1res.loc[i+1, hse_names]
                 if rcshifts:
                     res_next = df_1res.loc[i+1, 'RESNAME']
                     
             
             # Insert row into DataFrame
-            df.loc[i, col_phipsi] = psi_prev + list(df_1res.loc[i, phipsi_names].values) + phi_next
+            df.loc[i, col_phipsi] = phi_prev + psi_prev + list(df_1res.loc[i, phipsi_names].values) + phi_next + psi_next
             df.loc[i, col_chi] = chi_prev + list(df_1res.loc[i, chi_names].values) + chi_next
             df.loc[i, col_hbprev] = hb_prev
             df.loc[i, col_hbond] = list(df_1res.loc[i, hb_names].values)
@@ -872,6 +890,8 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
                 else:
                     rccs = [randcoil_ala[i][resname] for i in atom_names]
                 df.loc[i, col_rccs] = rccs
+            if hse:
+                df.loc[i, col_hse] = hse_prev + list(df_1res.loc[i, hse_names].values) + hse_next
             
         return df
     
