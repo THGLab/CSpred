@@ -372,7 +372,7 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
     
     
     @staticmethod    
-    def s2_param(nn_tree, res_obj, prev_Oatom, rad, b_param=-0.1):
+    def s2_param(nn_tree, res_obj, prev_Oatom, rad=10.0, b_param=-0.1):
         
         '''Calculate S2 order parameter of N-H bond based on the contact model 
         put forth in Zhang, Bruschweiler (2002) J. Am. Chem. Soc 124
@@ -581,7 +581,7 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
                 return None
     
         
-    def hbond_network(self, nn_tree, res_obj, rad):
+    def hbond_network(self, nn_tree, res_obj, rad=3.0):
         
         '''Constructs parameters that encode the structure of 3 different Hydrogen 
         bonds that may occur on a given residue. Each possible hydrogen bond is 
@@ -696,7 +696,7 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
         return output
 
 
-    def df_from_file_1res(self, fpath, hbrad=3, s2rad=10):
+    def df_from_file_1res(self, fpath, hbrad=3.0, s2rad=10.0, hse=False):
         
         '''Function to create a pandas DataFrame of single-residue SPARTA+ features 
         from a given PDB file.
@@ -724,10 +724,16 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
         col_names += ['S2']
         AAlet3 = [i.upper() for i in sorted(IUPACData.protein_letters_3to1.keys())]
         col_names += ['BLOSUM62_NUM_'+AAlet3[i] for i in range(20)]
+        col_names += ['HSE_CA' + i  for i in ['_U', '_D', '_Angle']]
+        col_names += ['HSE_CB' + i for i in ['_U', '_D']]
         
         data = []
         for model in structure:
             nn_tree = PDB.NeighborSearch(list(model.get_atoms()))
+            if hse:
+                hseca_calc = PDB.HSExposureCA(model)
+                hsecb_calc = PDB.HSExposureCB(model)
+                
             for chain in model:
                 dihedrals = self.calc_phi_psi(chain)
                 l = 0
@@ -737,7 +743,8 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
                     
                     if resname not in AAlet3:
                         continue
-                    resnum = res.get_id()[1]
+                    res_id = res.get_id()
+                    resnum = res_id[1]
                     row_data = [file_id, file_name, resname, resnum]
                     row_data += dihedrals[l]
                     torsions = self.calc_torsion_angles(res)
@@ -746,6 +753,17 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
                     row_data += HBonds
                     row_data += [self.s2_param(nn_tree, res, prevOatom, s2rad)]
                     row_data += self.blosum_nums(res)
+                    if hse:
+                        try:
+                            hseca = hseca_calc[(chain.get_id(), res_id)]
+                            hseca = list(hseca)
+                            hsecb = hsecb_calc[(chain.get_id(), res_id)]
+                            hsecb = list(hsecb)[:-1]
+                        except KeyError:
+                            hseca = 3 * [0]
+                            hsecb = 2 * [0]
+                        row_data += hseca
+                        row_data += hsecb
                     
                     try:
                         prevOatom = res['O']
@@ -758,7 +776,7 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
         return df
                    
 
-    def df_from_file_3res(self, fpath, hbrad=2.5, s2rad=10, rcshifts=True):
+    def df_from_file_3res(self, fpath, hbrad=3.0, s2rad=10.0, rcshifts=True):
         
         '''Function to create a pandas DataFrame of SPARTA+ features 
         from a given PDB file.
