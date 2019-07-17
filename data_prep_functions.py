@@ -1,0 +1,491 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Nov 18 14:07:26 2018
+
+@author: bennett
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from Bio.SeqUtils import IUPACData
+
+
+
+# First define some prelimnary things
+
+atom_names = ['HA', 'H', 'CA', 'CB', 'C', 'N']
+sparta_results = [0.25, 0.49, 0.94, 1.14, 1.09, 2.45] # Advertised performance of SPARTA+
+paper_order = ['Ala', 'Cys','Asp','Glu','Phe','Gly','His','Ile','Lys','Leu','Met','Asn','Pro','Gln','Arg','Ser','Thr','Val','Trp','Tyr'] # The amino acid order used in Sparta+ data and blosum matrix (1-letter alphabetic).
+#paper_order = [i.upper() for i in paper_order] # Might as well keep the AA 3-letter codes as lower case since we can .upper() them whenever
+# yangs_blos = pd.read_table('/Users/kcbennett/Downloads/BLOSUM62.tab', skiprows=2, header=None, names=list(IUPACData.protein_letters_1to3.keys()), sep=r"\s+") # The blosum matrix used by Sparta+
+# resname_blos_dict = {name.upper() : list(yangs_blos.loc[IUPACData.protein_letters_3to1[name]])[:5] for name in paper_order}
+
+# For easier access, define the names of different feature columns.
+# These are the names that we assign in our own feature extraction routine.
+col_phipsi = [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i-1', 'SIN_i-1']]
+col_phipsi += [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i', 'SIN_i']]
+col_phipsi += [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i+1', 'SIN_i+1']]
+col_chi = [i+j+k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_', 'CHI2_'] for j in ['COS', 'SIN', 'EXISTS']]
+col_hbprev = ['O_'+i+'_i-1' for i in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
+col_hbond = [i+j+'_i' for i in ['Ha_', 'HN_', 'O_'] for j in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
+col_hbnext = ['HN_'+i+'_i+1' for i in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
+col_s2 = ['S2'+i for i in ['_i-1', '_i', '_i+1']]
+struc_cols = col_phipsi + col_chi + col_hbprev + col_hbond + col_hbnext + col_s2
+blosum_names = ['BLOSUM62_NUM_'+paper_order[i].upper() for i in range(20)]
+#blosum_names = ['BLOSUM62_NUM_'+sorted(IUPACData.protein_letters_3to1.keys())[i].upper() for i in range(20)]
+col_blosum = [blosum_names[i]+j for j in ['_i-1', '_i', '_i+1'] for i in range(20)]
+seq_cols = col_blosum
+bin_seq_cols = ['BINSEQREP_'+ sorted(IUPACData.protein_letters_3to1.keys())[i].upper() + j for j in ['_i-1', '_i', '_i+1'] for i in range(20)]
+rcoil_cols = ['RCOIL_' + atom for atom in atom_names]
+ring_cols = [atom + '_RC' for atom in atom_names]
+all_cols = struc_cols + seq_cols + rcoil_cols + ring_cols
+all_cols_bin = struc_cols + bin_seq_cols + rcoil_cols + ring_cols
+
+# These are the names of new columns that were not included in the SPARTA+ feature set
+hsea_names = ['HSE_CA' + i  for i in ['_U', '_D', '_Angle']]
+hseb_names = ['HSE_CB' + i  for i in ['_U', '_D']]
+hse_cols = [name + i for i in ['_i-1', '_i', '_i+1'] for name in hsea_names + hseb_names]
+dssp_ss_names = ['A_HELIX_SS', 'B_BRIDGE_SS', 'STRAND_SS', '3_10_HELIX_SS', 'PI_HELIX_SS', 'TURN_SS', 'BEND_SS', 'NONE_SS']
+dssp_asa_names = ['REL_ASA', 'ABS_ASA']
+dssp_pp_names = ['DSSP_PHI', 'DSSP_PSI']
+dssp_hb_names = ['NH-O1_ENERGY', 'NH-O2_ENERGY', 'O-NH1_ENERGY', 'O-NH2_ENERGY']
+dssp_cols = [name + i for i in ['_i-1', '_i', '_i+1'] for name in dssp_ss_names + dssp_asa_names + dssp_pp_names + dssp_hb_names]
+dssp_energy_cols = [name + i for i in ['_i-1', '_i', '_i+1'] for name in dssp_hb_names]
+dssp_expp_cols = [name + i for i in ['_i-1', '_i', '_i+1'] for name in dssp_ss_names + dssp_asa_names + dssp_hb_names]
+dssp_ssi_cols = [name + '_i' for name in dssp_ss_names]
+dssp_norm_cols = [name + i for i in ['_i-1', '_i', '_i+1'] for name in dssp_asa_names + dssp_hb_names]
+dssp_pp_cols=[name + i for i in ['_i-1', '_i', '_i+1'] for name in dssp_pp_names]
+
+# These are the names of the columns with sequence information beyond the tri-peptide level
+ext_seq_cols = ['RESNAME_i' + i + str(j) for i in ['+', '-'] for j in range(1,21)]
+
+# These column names are for renaming to make consistent between Michael's version
+# of the naming and my own
+sparta_ring_cols = [atom + '_RING' for atom in atom_names]
+sparta_rcoil_cols = ["RC_" + atom  for atom in atom_names]
+sparta_rename_cols = sparta_ring_cols + sparta_rcoil_cols
+sparta_rename_map = dict(zip(sparta_rename_cols, ring_cols + rcoil_cols))
+sx2_rcoil_cols = ['RC_' + atom for atom in atom_names]
+sx2_rename_map = dict(zip(sparta_ring_cols + sx2_rcoil_cols, ring_cols + rcoil_cols))
+
+# Define the names for the original Sparta+ Data Columns (same set as above but different order so we can assign column labels to data obtained directly from Yang)
+orig_cols = col_blosum[:20]
+orig_cols += [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i-1', 'COS_i-1']]
+orig_cols += [i + j + '_i-1' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+orig_cols += col_blosum[20:40]
+orig_cols += [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i', 'COS_i']]
+orig_cols += [i + j + '_i' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+orig_cols += col_blosum[40:]
+orig_cols += [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i+1', 'COS_i+1']]
+orig_cols += [i + j + '_i+1' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+orig_cols += ['O_'+i+'_i-1' for i in ['_EXISTS', 'd_HA', '_COS_A', '_COS_H']]
+orig_cols += [i+j+'_i' for i in ['HN_', 'Ha_', 'O_'] for j in ['_EXISTS', 'd_HA', '_COS_A', '_COS_H']]
+orig_cols += ['HN_'+i+'_i+1' for i in ['_EXISTS', 'd_HA', '_COS_A', '_COS_H']]
+orig_cols += ['S2'+i for i in ['_i-1', '_i', '_i+1']]
+
+# These are the names of the boolean columns in the Sparta+ features that indicate existance of chi1/chi2 angles as well as possible hydrogen bonds
+exist_cols = [i + 'EXISTS' + k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_', 'CHI2_']]
+exist_cols += ['O_'+ '_EXISTS' +'_i-1', 'HN_' + '_EXISTS' + '_i+1']
+exist_cols += [i + '_EXISTS' + '_i' for i in ['Ha_', 'HN_', 'O_']]
+# For completeness, here are the remaining columns
+non_exist_cols = orig_cols.copy()
+for x in exist_cols:
+    non_exist_cols.remove(x)
+
+# These columns are multiplied by 10 in the original Sparta+ data
+x10cols = [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i-1', 'COS_i-1']]
+x10cols += [i + j + '_i-1' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+x10cols += [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i', 'COS_i']]
+x10cols += [i + j + '_i' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+x10cols += [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i+1', 'COS_i+1']]
+x10cols += [i + j + '_i+1' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+
+# Make separate lists of cosine, sine, distance columns
+phipsicos_cols = [i + 'COS_i-1' for i in ['PHI_', 'PSI_']]
+phipsicos_cols += [i + 'COS_i' for i in ['PHI_', 'PSI_']]
+phipsicos_cols += [i + 'COS_i+1' for i in ['PHI_', 'PSI_']]
+chicos_cols = [i + 'COS' + k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_', 'CHI2_']]
+hbondcos_cols = ['O_'+i+'_i-1' for i in ['_COS_H', '_COS_A']]
+hbondcos_cols += [i+j+'_i' for i in ['Ha_', 'HN_', 'O_'] for j in ['_COS_H', '_COS_A']]
+hbondcos_cols += ['HN_'+i+'_i+1' for i in ['_COS_H', '_COS_A']]
+cos_cols = phipsicos_cols + chicos_cols + hbondcos_cols
+phipsisin_cols = [i + 'SIN_i-1' for i in ['PHI_', 'PSI_']]
+phipsisin_cols += [i + 'SIN_i' for i in ['PHI_', 'PSI_']]
+phipsisin_cols += [i + 'SIN_i-1' for i in ['PHI_', 'PSI_']]
+chisin_cols = [i + 'SIN' + k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_', 'CHI2_']]
+sin_cols = phipsisin_cols + chisin_cols
+# And a list for columns containing distance information
+hbondd_cols = ['O_d_HA_i-1']
+hbondd_cols += [i+'d_HA_i' for i in ['Ha_', 'HN_', 'O_']]
+hbondd_cols += ['HN_d_HA_i+1']
+
+# Need a list of columns that will be subject to noise if we wish to use noise injection
+angle_cols = cos_cols + sin_cols
+noisy_cols = angle_cols + hbondd_cols + col_s2
+
+# Lets try some nonlinear functions of these columns
+# Define columns to be squared
+square_cols = cos_cols + hbondd_cols + col_s2
+#square_cols_names = [x + '_sq' for x in square_cols]
+square_cols_names = [x + '^2.0' for x in square_cols]
+cols_pown1 = hbondd_cols
+cols_pown2 = hbondd_cols
+cols_pown3 = hbondd_cols
+col_names_pown1 = [x + '^-1.0' for x in cols_pown1]
+col_names_pown2 = [x + '^-2.0' for x in cols_pown2]
+col_names_pown3 = [x + '^-3.0' for x in cols_pown3]
+
+# Define the names for the _i+1 and _i-1 columns to allow dropping them for RNNs
+im1_cols = ['PSI_'+i for i in ['COS_i-1', 'SIN_i-1']]
+ip1_cols = ['PHI_'+i for i in ['COS_i+1', 'SIN_i+1']]
+im1_cols += [i+j+'_i-1' for i in ['CHI1_', 'CHI2_'] for j in ['COS', 'SIN', 'EXISTS']]
+ip1_cols += [i+j+'_i+1' for i in ['CHI1_', 'CHI2_'] for j in ['COS', 'SIN', 'EXISTS']]
+im1_cols += col_hbprev
+ip1_cols += col_hbnext
+im1_cols += ['S2_i-1']
+ip1_cols += ['S2_i+1']
+im1_cols_bin = im1_cols.copy()
+ip1_cols_bin = ip1_cols.copy()
+im1_cols += ['BLOSUM62_NUM_'+list(IUPACData.protein_letters_3to1.keys())[i].upper() + '_i-1' for i in range(20)]
+ip1_cols += ['BLOSUM62_NUM_'+list(IUPACData.protein_letters_3to1.keys())[i].upper() + '_i+1' for i in range(20)]
+im1_cols_bin += ['BINSEQREP_'+ list(IUPACData.protein_letters_3to1.keys())[i].upper() + '_i-1' for i in range(20)]
+ip1_cols_bin += ['BINSEQREP_'+ list(IUPACData.protein_letters_3to1.keys())[i].upper() + '_i+1' for i in range(20)]
+
+# These are the names of the columns that are not in Sparta+ but are in the un-augmented features from our extraction
+cols_notinsp = dssp_cols + hse_cols + ext_seq_cols
+
+
+# Now some stuff to read in data
+
+# Read in ShiftX2 data
+# Athena -- 
+try:
+    train_sx2 = pd.read_csv('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/train_shiftx2_clean_rings.csv')
+    test_sx2 = pd.read_csv('/home/bennett/Documents/DataSets/bmrb_clean/clean_rings/test_shiftx2_clean_rings.csv')
+except FileNotFoundError:
+    pass
+# Hermes
+try:
+    train_sx2 = pd.read_csv('/home/kochise/data/shiftx2/clean_rings/train_shiftx2_clean_rings.csv')
+    test_sx2 = pd.read_csv('/home/kochise/data/shiftx2/clean_rings/test_shiftx2_clean_rings.csv')
+except FileNotFoundError:
+    pass
+# Office
+try:
+#    train_sx2 = pd.read_csv('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/train_shiftx2_clean_rings.csv')
+#    test_sx2 = pd.read_csv('/Users/kcbennett/Documents/data/ShiftX2/bmrb_clean/test_shiftx2_clean_rings.csv')
+    shiftx2_train = pd.read_csv('/Users/kcbennett/Documents/data/ShiftX2/sx2train_dssp.csv')
+    shiftx2_test = pd.read_csv('/Users/kcbennett/Documents/data/ShiftX2/sx2test_dssp.csv')
+except FileNotFoundError:
+    pass
+
+
+def feat_pwr(data, columns, pwrs):
+    '''Function to augment the feature set by adding new columns corresponding to given powers of selected features.
+    
+    args:
+        data = Contains the data to be augmented (Pandas DataFrame)
+        columns = List of columns to be used for the feature augmentation (List of Str)
+        pwrs = List of exponents to use for feature augmentation (List of Float)
+    
+    returns:
+        dat - Augmented data (Pandas DataFrame)
+    '''
+    dat = data.copy()
+    for col in columns:
+        for power in pwrs:
+            new_col_name = col + '^' + str(power)
+            if power < 0:
+                dat[new_col_name] = 0
+                dat.loc[dat[col] > 0, new_col_name] = dat.loc[dat[col] > 0, col]**power
+            else:
+                dat[new_col_name] = dat[col]**power
+    return dat
+
+def dihedral_purifier(data, tol=0.001, drop_cols=True, set_nans=True):
+    '''Function to purify given data based on eliminating those residues for which Biopython and DSSP disagree on dihedral angles by more than tol in Cos value for Phi_i.
+    
+    args:
+        data - Data to be purified (Pandas DataFrame)
+        tol - Tolerance for dihedral angle Cos values (Float)
+        drop_cols - Drop columns associated with DSSP PHI/PSI angles (Bool)
+        set_nans - Replace all shifts with NaN in filtered rows rather than removing said rows (Bool)
+    
+    returns:
+        dat - Data with examples removed if Biopython and DSSP disagree by too much (Pandas DataFrame)
+    '''
+    dat = data.copy()
+    phipsidev = np.abs(dat['PHI_COS_i'] - np.cos(np.pi / 180 * dat['DSSP_PHI_i'].astype(np.float64).values))
+    good_idxs = ((dat['PHI_COS_i'] == 0) & (dat['PHI_SIN_i'] == 0)) | (phipsidev == 1) | (phipsidev <= 0.001)
+    if set_nans:
+        dat.loc[~good_idxs, atom_names] = np.nan
+    else:
+        dat = dat.loc[good_idxs]
+    if drop_cols:
+        dat = dat.drop(['DSSP_' + i + j for i in ['PHI', 'PSI'] for j in ['_i-1', '_i', '_i+1']], axis=1)
+    return dat
+
+def dssp_purifier(data, set_nans=True):
+    '''Function to remove examples where DSSP fails to classify the secondary structure.
+    
+    args:
+        data - Given data to be filtered (Pandas DataFrame)
+        set_nans - Replace all shifts with NaN in filtered rows rather than removing said rows (Bool)
+    
+    returns:
+        dat - Filtered data (Pandas DataFrame)
+    '''
+    dat = data.copy()
+    bad_idxs = dat[(dat[dssp_ssi_cols[0]]==0) & (dat[dssp_ssi_cols[1]]==0) & (dat[dssp_ssi_cols[2]]==0) & (dat[dssp_ssi_cols[3]]==0) & (dat[dssp_ssi_cols[4]]==0) & (dat[dssp_ssi_cols[5]]==0) & (dat[dssp_ssi_cols[6]]==0) & (dat[dssp_ssi_cols[7]]==0)].index
+    if set_nans:
+        dat.loc[bad_idxs, atom_names] = np.nan
+    else:
+        dat = dat.drop(bad_idxs) 
+    return dat
+
+def medianize(data, cols, medians=None):
+    '''Function to replace zeros by medians for specified columnns.
+    
+    args:
+        data - Data containing columns with zeros to be replaced (Pandas DataFrame)
+        cols - Names of columns with zeros that are to be replaced (List)
+        medians - Explicit list of medians to use for replacement in testing data (List)
+    
+    returns:
+        meds - Medians used for replacement (List)
+        dat - Data with zeros replaced by medians (Pandas DataFrame)
+    '''
+    dat = data.copy()
+    if medians is not None:
+        meds = medians
+    else:
+        meds = [dat.loc[dat[col] != 0, col].median() for col in cols]
+    med_dict = dict(zip(cols, meds))
+    for col in cols:
+        dat.loc[(dat[col] == 0), col] = med_dict[col]
+    return meds, dat
+
+def ha23ambigfix(data, mode=0):
+    '''Function to use the HA2/HA3 ring current calculations in a way that resolves ambiguity.
+    
+    args:
+        data - Data to fix (Pandas DataFrame)
+        mode - Method of resolving ambiguity, 0 -> use average, 1 -> use HA2, 2 -> use HA3 (Int)
+    
+    returns:
+        dat - Data with ring current ambiguity resolved and extra columns dropped
+    '''
+    dat = data.copy()
+    idx_ha = [int(i) for i in list(dat[dat['HA2_RING'].notnull()].index)]
+    if mode==0:
+        for i in idx_ha:
+            dat.loc[i, 'HA_RC'] = (dat.loc[i, 'HA2_RING'] + dat.loc[i, 'HA3_RING']) / 2
+    elif mode==1:
+        for i in idx_ha:
+            dat.loc[i, 'HA_RC'] = dat.loc[i, 'HA2_RING']
+    elif mode==2:
+        for i in idx_ha:
+            dat.loc[i, 'HA_RC'] = dat.loc[i, 'HA3_RING']
+    dat = dat.drop(['HA2_RING', 'HA3_RING'], axis=1)
+    return dat
+
+def check_nan_shifts(data, thr, ends=False):
+    '''Function to check the number of NaN shifts in each row and, for each residue with fewer than thr non-NaN shifts, sets all shifts for that residue as well as neighbors to be NaN so that those residues will be excluded from training/evaluation
+    
+    args:
+        data - Data to be cleansed (Pandas DataFrame)
+        thr - Number of non-NaN shifts required for a residue and neighbors to survive (Int)
+        ends - Set shifts of atoms on first and last residue of each chain to be NaN as well (Bool)
+    
+    returns:
+        dat - Cleaned data (Pandas DataFrame)
+    '''
+    dat = data.copy()
+    for idx in range(len(dat)):
+        snums = dat.loc[idx, atom_names].count()
+        file = dat.loc[idx, 'PDB_FILE_NAME']
+        chain = dat.loc[idx, 'CHAIN']
+        if snums < thr:
+            dat.loc[idx, atom_names] = np.nan
+            if idx > 0:
+                file_m1 = dat.loc[idx - 1, 'PDB_FILE_NAME']
+                chain_m1 = dat.loc[idx - 1, 'CHAIN']
+                if (file == file_m1) and (chain == chain_m1):
+                    dat.loc[idx - 1, atom_names] = np.nan
+            if idx < (len(dat) -1):
+                file_p1 = dat.loc[idx + 1, 'PDB_FILE_NAME']
+                chain_p1 = dat.loc[idx + 1, 'CHAIN']
+                if (file == file_m1) and (chain == chain_m1):
+                    dat.loc[idx + 1, atom_names] = np.nan
+        if ends:
+            if (idx == 0) or (idx == len(dat) -1):
+                dat.loc[idx, atom_names] = np.nan
+            elif (file != file_m1) or (chain == chain_m1):
+                dat.loc[idx, atom_names] = np.nan
+                dat.loc[idx - 1, atom_names] = np.nan
+            elif (file != file_p1) or (chain == chain_p1):
+                dat.loc[idx, atom_names] = np.nan
+                dat.loc[idx + 1, atom_names] = np.nan
+    return dat
+
+def raw_dprep(data, ha23mode=0, power_dict={2.0 : square_cols, -1.0 : hbondd_cols, -2.0 : hbondd_cols, -3.0 : hbondd_cols}, diff_rings=False):
+    '''Function to prepare freshly-extracted data.
+    
+    args:
+        data - Data to be prepared (Pandas DataFrame)
+        ha23mode - Method of resolving ambiguity for HA2/3; see ha23ambigfix function (Int, 0 or 1)
+        power_dict - Dictionary where keys are powers and corresponding values are lists of the column names.  These columns are raised to the corresonding power and the result is stored as new columns, augmenting the feature set (Dict)
+        diff_rings - Difference the ring current contributions from the shifts.  Only use this if not doing kfold with the result since it requires that we pre-medianize the ring current contributions to eliminate NaN values and in principle this should be done at each fold separately (Bool)
+    
+    returns:
+        dat - Cleaned data ready to be inserted into a kfold_crossval or model-generating function
+    
+    '''
+    dat = data.rename(index=str, columns=sx2_rename_map)
+    dat.index = pd.RangeIndex(start=0, stop=len(dat), step=1)
+    dat = ha23ambigfix(dat, mode=ha23mode)
+    try: # If DSSP columns are available, use them to filter a few bad residues based on the criteria in dihedral_purifier and dssp_purifier
+        dat = dihedral_purifier(dat, drop_cols=True)
+        dat = dssp_purifier(dat)
+    except KeyError:
+        pass
+    for pwr in power_dict.keys(): # Augment the feature set with a few non-linear transformations
+        dat = feat_pwr(dat, power_dict[pwr], [pwr])
+    # It is assumed that random coil columns are contained in the data
+    if diff_rings:
+        for col in ring_cols:
+            null_idxs = [int(i) for i in list(dat[dat[col].isnull()].index)]
+            dat.loc[null_idxs, col] = dat[col].median()
+        dat = diff_targets(dat, rings=True, coils=True)
+    else:
+        dat = diff_targets(dat, rings=False, coils=True)
+    dat.index = pd.RangeIndex(start=0, stop=len(dat), step=1)
+    return dat
+
+def sx2_dprep(train_data, test_data, ha23mode=0, med_cols=angle_cols+hbondd_cols, add_squares=square_cols, med_rings=False, diff_rings=False, medians=True, normalize=False):
+    '''Function to completely prepare test and train data from shiftx2 extraction.
+    
+    args:
+        train_data = Training data to prepare (Pandas DataFrame)
+        test_data = Test data to prepare (Pandas DataFrame)
+        ha23mode = Mode for resolving HA2/HA3 ring current ambiguity (0, 1, or 2 -- See ha23ambigfix function)
+        
+    returns:
+        train_dat - Prepared training data (Pandas DataFrame)
+        test_dat - Prepared test data (Pandas DataFrame)
+    '''
+    train_dat = train_data.rename(index=str, columns=sx2_rename_map)
+    test_dat = test_data.rename(index=str, columns=sx2_rename_map)
+    train_dat.index = pd.RangeIndex(start=0, stop=len(train_dat), step=1)
+    test_dat.index = pd.RangeIndex(start=0, stop=len(test_dat), step=1)
+    train_dat = dihedral_purifier(train_dat)
+    test_dat = dihedral_purifier(test_dat)
+    train_dat = dssp_purifier(train_dat)
+    test_dat = dssp_purifier(test_dat)
+    if medians:
+        train_medians, train_dat = medianize(train_dat, med_cols)
+        _, test_dat = medianize(test_dat, med_cols, train_medians)
+    train_dat = ha23ambigfix(train_dat, mode=ha23mode)
+    test_dat = ha23ambigfix(test_dat, mode=ha23mode)
+    # Fill in ring columns with medians
+    if med_rings:
+        for col in ring_cols:
+            null_idxs_train = [int(i) for i in list(train_dat[train_dat[col].isnull()].index)]
+            null_idxs_test = [int(i) for i in list(test_dat[test_dat[col].isnull()].index)]
+            train_dat.loc[null_idxs_train, col] = train_dat[col].median()
+            test_dat.loc[null_idxs_test, col] = train_dat[col].median()
+    # Add square columns
+    if add_squares is not None:
+        train_dat = featsq(train_dat, add_squares)
+        test_dat = featsq(test_dat, add_squares)
+    
+    # Difference the raw shifts with random coil (and maybe ring current) contributions 
+    train_dat = diff_targets(train_dat, rings=diff_rings, coils=True)
+    test_dat = diff_targets(test_dat, rings=diff_rings, coils=True)
+    # Normalize all columns
+    if normalize:
+        sx2_means, sx2_stds, train_dat = whitener(struc_cols + col_blosum + ring_cols + hse_cols + dssp_norm_cols, train_dat)
+        _, _, test_dat = whitener(struc_cols + col_blosum + ring_cols + hse_cols + dssp_norm_cols, test_dat, means=sx2_means, stds=sx2_stds, test_data=True)
+    
+    train_dat.index = pd.RangeIndex(start=0, stop=len(train_dat), step=1)
+    test_dat.index = pd.RangeIndex(start=0, stop=len(test_dat), step=1)
+    return train_dat, test_dat
+
+def sp_dprep(data, ha23mode=0, spfeats_only=False, med_rings=True, add_squares=square_cols, diff_rings=False):
+    '''Function to prepare sparta+ data.'''
+    dat = data.rename(index=str, columns=sx2_rename_map)
+    dat.index = pd.RangeIndex(start=0, stop=len(dat), step=1)
+    dat = dihedral_purifier(dat, drop_cols=not spfeats_only)
+    dat = dssp_purifier(dat)
+    if spfeats_only:
+        dat = dat.drop(dssp_cols + hse_cols + ext_seq_cols, axis=1)
+    else:
+        dat = featsq(dat, square_cols)
+    dat = ha23ambigfix(dat, mode=ha23mode)
+    if med_rings:
+        for col in ring_cols:
+            null_idxs = [int(i) for i in list(dat[dat[col].isnull()].index)]
+            dat.loc[null_idxs, col] = dat[col].median()
+    dat = diff_targets(dat, rings=diff_rings, coils=True)
+    dat.index = pd.RangeIndex(start=0, stop=len(dat), step=1)
+    return dat
+
+def hbond_purifier(data, ang_tol=None, drop_phi=False):
+    '''Function to filter data by H-bond angles or to drop Phi angles.
+    
+    args:
+        data - Data to be filtered (Pandas DataFrame)
+        ang_tol - Tolerance for cosine angle filtration about 180 degrees (None or Float)
+        drop_phi - Whether or not to drop the Phi angles (Bool)
+    
+    returns:
+        dat - Filtered data (Pandas DataFrame)'''
+    dat = data.copy()
+    if ang_tol is not None:
+        cos_tol = np.cos((180 - ang_tol) * np.pi/180)
+        hyd_angs = [i + '__COS_H_' + j for i in ['HN', 'Ha', 'O'] for j in ['i-1', 'i', 'i+1']]
+        for col in hyd_angs:
+            if col in dat.columns:
+                dat = dat[(dat[col] < cos_tol) | (dat[col] == 0)]
+    
+    if drop_phi:
+        phi_angs = [i + '__COS_A_' + j for i in ['HN', 'Ha', 'O'] for j in ['i-1', 'i', 'i+1']]
+        for col in phi_angs:
+            if col in dat.columns:
+                dat = dat.drop(col, axis=1)
+    
+    return dat
+                
+
+# These few lines are to check chi angles existence for those residues with alt chi definitions
+def get_chis(data, resname):
+    #resname_dict = {'ASN' : [-2, -3, 1, 0, -3], 'HIS' : [-2, -3, 1, 0, -1], 'TRP' : [-3, -2, -4, -3, 1], 'ASP' : [-2, -3, 6, 2, -3], 'LEU' : [-1, -1, -4, -3, 0], 'PHE' : [-2, -2, -3, -3, 6], 'TYR' : [-2, -2, -3, -2, 3], 'VAL' : [0, -1, -3, -2, -1], 'ILE' : [-1, -1, -3, -3, 0]}
+    blos = resname_blos_dict[resname]
+    if resname == 'VAL':
+        chi_name = 'CHI1_EXISTS_i'
+    else:
+        chi_name = 'CHI2_EXISTS_i'
+    dat = data[(data['BLOSUM62_NUM_ALA_i'] == blos[0]) & (data['BLOSUM62_NUM_CYS_i'] == blos[1]) & (data['BLOSUM62_NUM_ASP_i'] == blos[2]) & (data['BLOSUM62_NUM_GLU_i'] == blos[3]) & (data['BLOSUM62_NUM_PHE_i'] == blos[4])]
+    return dat[chi_name]
+        
+def chi2_exist_nums(data, resname):
+    '''returns total number of residues with given resname as well as number of these residues for which chi2 does not exist'''
+    chis = get_chis(data, resname)
+    nres = len(chis)
+    nchis = len(chis[chis < 9])
+    return (nres, nchis)
+    
+
+
+bestH_fckwargs = {'activ' : 'prelu', 'lrate' : 0.001, 'mom' : [0.9, 0.999], 'dec' : 1*10**-6, 'epochs' : 500, 'min_epochs' : 50, 'opt_type' : 'adam', 'do' : 0.4, 'reg' : 0*10**-5, 
+                  'reg_type' : 'L2', 'tol' : 4, 'early_stop' : None, 'bnorm' : True, 'nest' : True, 'lsuv' : True, 'clip_norm' : 0.0, 'clip_val' : 0.0, 'reject_outliers' : None, 
+                  'opt_override' : True, 'noise' : None, 'noise_type': 'angle', 'noise_dist' : 'uniform', 'batch_size' : 64, 'lsuv_batch' : 2048}
+
+H_fckwargs = {'activ' : 'tanh', 'lrate' : 0.0001, 'mom' : [0.9, 0.999], 'dec' : 1*10**-6, 'epochs' : 450, 'min_epochs' : 50, 'opt_type' : 'sgd', 'do' : 0.0, 'reg' : 1*10**-6, 
+              'reg_type' : 'L2', 'tol' : 3, 'pretrain' : 'PQ', 'bnorm' : False, 'nest' : True, 'lsuv' : False, 'clip_norm' : 0.0, 'clip_val' : 0.0, 'reject_outliers' : None,
+              'opt_override' : False, 'noise' : None, 'noise_type': 'percent', 'noise_dist' : 'normal', 'batch_size' : 64, 'lsuv_batch' : 2048}
+
+
