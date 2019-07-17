@@ -75,6 +75,16 @@ test_path_cs = '/Users/kcbennett/Documents/data/ShiftX2/shiftx2-testset-June2011
 test_path_pdb = '/Users/kcbennett/Documents/data/ShiftX2/shiftx2-testset-June2011/PDB-testset-addHydrogens'
 
 def add_randcoil_shifts(df, atoms):
+    '''Adds column(s) to an existing DataFrame that contains the chemical shift of that atom in a random coil configuration (accounting for the possibility that the previous residue is a proline).
+    
+    args:
+        df - Data to which random coil column(s) are to be added (Pandas DataFrame)
+        atoms - List of names of atoms for which random coil shifts are to be added (List of Str)
+    
+    returns:
+        out_df - Data with new column(s) added (Pandas DataFrame)
+        '''
+        
     out_df = df
     for atom in atoms:
         out_df['RC_' + atom] = np.nan
@@ -92,11 +102,92 @@ def add_randcoil_shifts(df, atoms):
     return out_df
         
 
+def shifty_tsv_to_tab(tsv_path, atoms, tab_path=None):
+    shift_df = pd.read_csv(tsv_path, comment='#', error_bad_lines=False, skiprows=1,
+                     header=None, sep='\s+')
+    shift_df.columns = ['Index', 'Residue_PDB_seq_code', 'seq_code', 'Residue_label',
+                  'Atom_name', 'Atom_type', 'Chem_shift_value', 'dblzeros',
+                  'zeros']
+    shift_df = shift_df.drop(['Index', 'seq_code', 'Atom_type', 'dblzeros', 'zeros'], axis=1)
+    cap_3to1_dict = {i.upper() : IUPACData.protein_letters_3to1[i] for i in IUPACData.protein_letters_3to1.keys()}
+    shift_df['Residue_label'] = shift_df['Residue_label'].apply(lambda x : cap_3to1_dict[x])
+    
+    shift_df.index = pd.RangeIndex(start=0, stop=len(shift_df), step=1)    
+    res_df = shift_df.drop(['Atom_name', 'Chem_shift_value'], axis=1)
+    res_df = res_df.drop_duplicates()
+    
+    chain_str = ''.join(res_df['Residue_label'])
+    if tab_path is None:
+        path = '/'.join(tsv_path.split('/')[:-1])
+        file = tsv_path.split('/')[-1]
+        tab_path = path + '/' + file.split('.')[0] + '.tab'
+    else:
+        tab_path = tab_path + tsv_path.split('/')[-1].split('.')[0] + '.tab'
+    with open(tab_path, 'w') as file:
+        file.write('DATA SEQUENCE\t' + chain_str + '\n')
+        file.write('VARS\tRESID\tRESNAME\tATOMNAME\tSHIFT\n')
+        file.write('FORMAT\t%4d\t%1s\t%4s\t%8.3f\n')
+        for row in range(len(shift_df)):
+            dat = [str(i) for i in list(shift_df.loc[row])]
+            file.write('\t'.join(dat) + '\n')
+
+
+def nmrstar_to_tab(tsv_path, atoms, tab_path=None):
+    try:
+        entry = pynmrstar.Entry.from_file(tsv_path)
+        switch = 0
+    except ValueError:
+        bmr_num = tsv_path.split('/')[-1].split('.')[0].split('bmr')[1]
+        entry = pynmrstar.Entry.from_file('http://rest.bmrb.wisc.edu/bmrb/NMR-STAR2/' + bmr_num)
+        switch = 1
+
+    # Find chemical shifts
+    for i in entry:
+        if i.category == 'assigned_chemical_shifts':
+            for j in i:
+                if '_Atom_name' in j.tags:
+                    loop = j
+            break
+    if switch == 0:
+        cs = loop.get_tag(['_Residue_PDB_seq_code', '_Atom_name',
+                           '_Chem_shift_value', '_Residue_label'])
+    else:
+        cs = loop.get_tag(['_Residue_seq_code', '_Atom_name',
+                           '_Chem_shift_value', '_Residue_label'])
+    df = pd.DataFrame(cs, columns=['Residue_PDB_seq_code', 'Atom_name',
+                                   'Chem_shift_value', 'Residue_label'])
+    cap_3to1_dict = {i.upper() : IUPACData.protein_letters_3to1[i] for i in IUPACData.protein_letters_3to1.keys()}
+    df['Residue_label'] = df['Residue_label'].apply(lambda x : cap_3to1_dict[x])        
+    df.index = pd.RangeIndex(start=0, stop=len(df), step=1)
+    res_df = df.drop(['Atom_name', 'Chem_shift_value'], axis=1)
+    res_df = res_df.drop_duplicates()
+    df = df[['Residue_PDB_seq_code', 'Residue_label', 'Atom_name', 'Chem_shift_value']]
+    chain_str = ''.join(res_df['Residue_label'])
+    if tab_path is None:
+        path = '/'.join(tsv_path.split('/')[:-1])
+        file = tsv_path.split('/')[-1]
+        tab_path = path + '/' + file.split('.')[0] + '.tab'
+    else:
+        tab_path = tab_path + tsv_path.split('/')[-1].split('.')[0] + '.tab'
+    with open(tab_path, 'w') as file:
+        file.write('DATA SEQUENCE\t' + chain_str + '\n')
+        file.write('VARS\tRESID\tRESNAME\tATOMNAME\tSHIFT\n')
+        file.write('FORMAT\t%4d\t%1s\t%4s\t%8.3f\n')
+        for row in range(len(df)):
+            dat = [str(i) for i in list(df.loc[row])]
+            file.write('\t'.join(dat) + '\n')
+
+
 def df_from_tsv(path, atoms):
-    '''takes path to a tsv file containing chemical shifts and returns a pandas
-    dataframe containing the chemical shifts for the desired list of atoms.
-    The returned dataframe is indexed by the residue number in the pdb file
-    or the Residue_PDB_seq_code.'''
+    '''Takes path to a tsv file containing chemical shifts and returns a pandas dataframe containing the chemical shifts for the desired list of atoms. The returned dataframe is indexed by the residue number in the pdb file or the Residue_PDB_seq_code.
+    
+    args:
+        path - Path to the TSV file from which shifts are to be extraced (Str)
+        atoms - List of atom names for which to obtain shifts (List of Str)
+    
+    returns:
+        pvdf - DataFrame of chemical shfits for all the atoms of specified names in the file (Pandas DataFrame)
+        '''
 
     # Read in data, label columns, and reshape
     df = pd.read_csv(path, comment='#', error_bad_lines=False, skiprows=1,
@@ -113,13 +204,16 @@ def df_from_tsv(path, atoms):
 
 
 def df_from_bmrb(path, atoms):
-    '''takes path to an nmr-star file, of the format found in the bmrb, and
-    returns a pandas dataframe of the chemical shifts for the desired list
-    of atoms.  Designed to work with shiftx2 dataset so uses version2 of
-    nmr-star files (i.e., requires to set the pynmrstar module variable
-    ALLOW_V2_ENTRIES=True). The returned dataframe is indexed by the
-    residue number in the pdb file (i.e., Residue_PDB_seq_code).'''
-
+    '''Takes path to an nmr-star file, of the format found in the bmrb, and returns a pandas dataframe of the chemical shifts for the desired list of atoms.  Designed to work with shiftx2 dataset so uses version2 of nmr-star files (i.e., requires to set the pynmrstar module variable ALLOW_V2_ENTRIES=True). The returned dataframe is indexed by the residue number in the pdb file (i.e., Residue_PDB_seq_code).
+    
+    args:
+        path - Path to the BMRB file from which shifts are to be extracted (Str)
+        atoms - List of the names of atoms for which to obtain shifts (List of Str)
+    
+    returns:
+        pvdf - DataFrame of chemical shifts for all the atoms of specified names in the file (Pandas DataFrame)
+        '''
+    
     try:
         entry = pynmrstar.Entry.from_file(path)
         switch = 0
@@ -158,12 +252,20 @@ def df_from_bmrb(path, atoms):
 # With above two functions and the sparta_features.py functions, can do
 
 
-def build_full_df(pdb_path, shift_path, atoms, rcfeats=False):
-    '''takes paths to directories of PDB files and tsv/nmr-star files
-    and returns a pandas dataframe containing all the residues along
-    with their identifying information, sparta+ features, and chemical
-    shifts for the desired atoms.  File extensions are based on the
-    shiftx2 dataset.'''
+def build_full_df(pdb_path, shift_path, atoms, pdb_ext='/*.pdbH', nmr_ext=['/*.str.corr.pdbresno', '/*.str.corr.pdbresno'], rcfeats=False, hse=True, first_chain_only=False, sequence_columns=0):
+    '''takes paths to directories of PDB files and tsv/nmr-star files and returns a pandas dataframe containing all the residues along with their identifying information, sparta+ features, and chemical shifts for the desired atoms.  Default file extensions are based on the shiftx2 dataset.
+    
+    args:
+        pdb_path - Path to the directory containing PDB files (Str)
+        shift_path - Path to the directory containing chemical shift files (Str)
+        atoms - Names of atoms for which chemical shifts are to be obtained (List of Str)
+        pdb_ext - Extension for pdb files (Str)
+        nmr_ext - List of extensions for NMRStar files and TSV files respectively (List of Str)
+        rcfeats - Include random coil chemical shifts (Bool)
+    
+    returns:
+        full_df - DataFrame containing features and shifts from all residues in the files from the specified directories (Pandas DataFrame)
+        '''
 
     pdb_files = glob.glob(pdb_path + '/*.pdbH')
     nmr_star_files = glob.glob(shift_path + '/*.str.corr.pdbresno')
@@ -200,7 +302,7 @@ def build_full_df(pdb_path, shift_path, atoms, rcfeats=False):
             print('error on file ' + pdb_file)
             continue
 
-        pdb_df = feature_reader.df_from_file_3res(pdb_file, rcshifts=rcfeats)
+        pdb_df = feature_reader.df_from_file_3res(pdb_file, rcshifts=rcfeats, hse=hse, first_chain_only=first_chain_only, sequence_columns=sequence_columns)
         if nmr_file in nmr_star_files:
             shift_df = df_from_bmrb(nmr_file, atoms)
             shift_df.index = shift_df.index.astype(int)

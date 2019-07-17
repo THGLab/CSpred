@@ -849,7 +849,8 @@ def data_prep(data, atom, reject_outliers=None, norm_shifts=True, norm_stats=Non
         return feats, shift_norm, shifts_mean, shifts_std
 
 
-def mtl_data_prep(data, atoms, reject_outliers=None, norm_shifts=True, testing=False):
+
+def mtl_data_prep(data, atoms, reject_outliers=None, norm_shifts=True, mode='un-masked'):
     '''Function to prepare features and shifts from the given DataFrame to facilitate
     processing by the model-generating functions below that use multi-task learning.
     There is significant conceptual overlap with the previous data_prep function but
@@ -861,21 +862,29 @@ def mtl_data_prep(data, atoms, reject_outliers=None, norm_shifts=True, testing=F
         atom - Name of atom for which the shifts are desired (Str)
         reject_outliers - Eliminate entries for which the targets differ by more than this number of standard deviations (None or Float)
         norm_shifts - Whether or not to normalize the target shifts (Bool)
-        testing - Whether or not the data prep is for testing rather than training.  If for testing, then returned shifts should be for all residues with non-null shifts for each atom rather than only those residues with non-null for all atoms (Bool)
+        mode - Accepts 'testing', 'masked', or 'un-masked'.  If for testing, then returned shifts should be for all residues with non-null shifts for each atom rather than only those residues with non-null for all atoms, which is the 'un-masked' behavior.  If 'masked', then all residues with at least 1 non-NaN shifts will have the NaN shifts set to a pre-specified value (hard coded as 10**3) so that they can be easily identified for a custom loss function (see masked_mse) which will then drop the loss contribution coming from shifts with this pre-specified value.  This functionality allows using all residues with at least 1 non-NaN shift for training of MTL models (Str)
+
         
     returns:
         feats, shifts_norms, shifts_means, shifts_stds - Feature, shifts, shift means, and shift stds for all atoms requested data (Pandas DataFrames)
     '''
     dat = data.copy()
+    # Drop unnecessary columns
     for col in cols_to_drop:
         try:
             dat = dat.drop(col, axis=1)
-        except KeyError:
-            pass
         except ValueError:
             pass
+    # Fix any NaNs in ring-current columns
+    for atom in atom_names:
+        try:
+            ring_col = atom + '_RC'
+            ring_med = dat[dat[ring_col].notnull()][ring_col].median()
+            dat[ring_col] = dat[ring_col].fillna(value=ring_med)
+        except KeyError:
+            pass
 
-    if testing:
+    if mode == 'testing':
         dat_dict = {}
         feats = []
         for atom in atoms:
@@ -891,8 +900,6 @@ def mtl_data_prep(data, atoms, reject_outliers=None, norm_shifts=True, testing=F
                 try:
                     ring_col = at + '_RC'
                     these_feats = these_feats.drop(ring_col, axis=1)
-                    ring_mean = these_feats[these_feats[ring_col].notnull()][ring_col].mean()
-                    feats[ring_col] = these_feats[ring_col].fillna(value=ring_mean)
                 except KeyError:
                     pass
                 except ValueError:
@@ -907,7 +914,48 @@ def mtl_data_prep(data, atoms, reject_outliers=None, norm_shifts=True, testing=F
         shifts_means = len(atoms) * [0]
         shifts_stds = len(atoms) * [1]
         shifts_norms = [shifts.fillna(value=0).values for shifts in shifts_list]
-    else:
+    
+    
+    elif mode == 'masked':
+        mask_value = 10**3
+        dat = dat[dat[atoms].isnull().sum(axis=1) < len(atoms)]
+        dat.index = pd.RangeIndex(start=0, stop=len(dat), step=1)
+        feats = dat.drop(atoms, axis=1)
+        if norm_shifts:
+            shifts_means = dat[atoms].mean()
+            shifts_stds = dat[atoms].std()
+            dat[atoms] = (dat[atoms] - shifts_means) / shifts_stds
+        else:
+            shifts_means = len(atoms) * [0]
+            shifts_stds = len(atoms) * [1]
+        for atom in atoms:
+            dat.loc[dat[atom].isnull(), atom] = mask_value
+        shifts_norms = [dat[atom].values for atom in atoms]
+        feats = dat.drop(atoms, axis=1)
+        for atom in atom_names:
+            try:
+                feats = feats.drop(atom, axis=1)
+            except ValueError:
+                pass
+        to_remove = list(set(atom_names) - set(atoms))
+        for atom in to_remove:
+            try:
+                ring_col = atom + '_RC'
+                feats = feats.drop(ring_col, axis=1)
+            except KeyError:
+                pass
+            except ValueError:
+                pass
+            try:
+                rcoil_col = 'RCOIL_' + atom
+                feats = feats.drop(rcoil_col, axis=1)
+            except ValueError:
+                pass
+        feats = feats.values
+        
+    
+    elif mode == 'un-masked':
+            
         for atom in atoms:
             dat = dat[dat[atom].notnull()]
             shifts_list = [dat[atom] for atom in atoms]
@@ -940,22 +988,17 @@ def mtl_data_prep(data, atoms, reject_outliers=None, norm_shifts=True, testing=F
         for atom in atom_names:
             try:
                 feats = feats.drop(atom, axis=1)
-            except KeyError:
-                pass
             except ValueError:
                 pass
     
         # Need to drop the random coil and ring current columns for the other atoms if 
         # such columns are in the data.
     
-    
         to_remove = list(set(atom_names) - set(atoms))
         for atom in to_remove:
             try:
                 ring_col = atom + '_RC'
                 feats = feats.drop(ring_col, axis=1)
-                ring_mean = feats[feats[ring_col].notnull()][ring_col].mean()
-                feats[ring_col] = feats[ring_col].fillna(value=ring_mean)
             except KeyError:
                 pass
             except ValueError:
@@ -963,8 +1006,6 @@ def mtl_data_prep(data, atoms, reject_outliers=None, norm_shifts=True, testing=F
             try:
                 rcoil_col = 'RCOIL_' + atom
                 feats = feats.drop(rcoil_col, axis=1)
-            except KeyError:
-                pass
             except ValueError:
                 pass
         
@@ -986,6 +1027,14 @@ def mtl_data_prep(data, atoms, reject_outliers=None, norm_shifts=True, testing=F
 #        return feats, shift_norm, rej_mean, rej_std
     else:
         return feats, shifts_norms, shifts_means, shifts_stds
+
+
+#Here is a a loss function for MTL that allows use of all of the examples with at least 1 non-NaN shift when training a model
+
+def masked_mse(y_true, y_pred):
+    mask_value = 10**3
+    mask = K.cast(K.not_equal(y_true, mask_value), K.floatx())
+    return keras.losses.mean_squared_error(y_true * mask, y_pred * mask)
 
 
 def make_optimizer(opt_type, lrate, mom, dec, nest, clip_norm=False, clip_val=False, opt_override=False):
@@ -1884,7 +1933,7 @@ def hard_mtl_fc(data, atoms, arch, activ='prelu', lrate=0.001, mom=0, dec=10**-6
 
 
 
-def stitch_mtl_fc(data, atoms, arch, activ='prelu', lrate=[0.001, 0.001], mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None, early_stop=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0.0, clip_norm=0.0, opt2_kwargs={}, cs_mult=1, reject_outliers=None, noise=None, cs_mode='affine_combo', noise_type='angle', noise_dist='uniform', batch_size=64, lsuv_batch=2048):
+def stitch_mtl_fc(data, atoms, arch, activ='prelu', lrate=[0.001, 0.001], mom=0, dec=10**-6, epochs=[100, 100, 50], min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None, early_stop=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0.0, clip_norm=0.0, opt2_kwargs={}, cs_mult=100, reject_outliers=None, noise=None, cs_mode='affine_combo', hard_burnin=0, noise_type='angle', noise_dist='uniform', batch_size=64, lsuv_batch=2048, residual=False, masked=False):
     '''Constructs a model from the given features and shifts for
     the requested atom.  The model is trained for the given number
     of epochs with the loss being checked every per epochs.  Training
@@ -1894,7 +1943,7 @@ def stitch_mtl_fc(data, atoms, arch, activ='prelu', lrate=[0.001, 0.001], mom=0,
     args:
         data - Feature and target data (Pandas DataFrame)
         atom - Name of atom to predict (Str)
-        arch - List of the number of neurons per layer (List)
+        arch - List of the number of neurons per layer.  If residual, then all layers must be the same width (List)
         activ - Activation function to use (Str - prelu, relu, tanh, etc.)
         lrate - Learning rate for SGD (Float)
         mom - Momentum for SGD (Float)
@@ -1922,7 +1971,12 @@ def stitch_mtl_fc(data, atoms, arch, activ='prelu', lrate=[0.001, 0.001], mom=0,
         noise_type - Argument to be fed to noise generator (Str) -- See res_level_generator()
         noise_dist - Distribution from which to draw noise values -- "uniform" or "normal" (Str)
         batch_size - Number of examples per batch (Int)
-        lsuv_batch - Number of examples used for LSUV initialization
+        lsuv_batch - Number of examples used for LSUV initialization (Int)
+        cs_mult - Factor by which the cross-stitch layers train faster than the sub-networks (Int)
+        cs_mode - Method of combining sub-task layers via cross-stich layer.  Accepts "affine_combo" or "dense" (Str)
+        hard_burnin - Number of epochs to pre-train a hard mtl network of same architecture as sub-tast networks (Int)
+        residual - Add skip connections (Bool)
+        masked - Use custom loss function masked_mse to allow training the cross-stitch network on all examples
         
     returns:
         
@@ -1931,334 +1985,13 @@ def stitch_mtl_fc(data, atoms, arch, activ='prelu', lrate=[0.001, 0.001], mom=0,
 
         
     
-    feats, shifts_list, shifts_means, shifts_stds = mtl_data_prep(dat, atoms, reject_outliers=reject_outliers, norm_shifts=norm_shifts, testing=True)
-    combined_feats, combined_shifts, combined_means, combined_std = mtl_data_prep(dat, atoms, reject_outliers=reject_outliers, norm_shifts=norm_shifts)
-    
-    if norm_shifts:
-        for i in range(len(shifts_list)):
-            shifts_list[i] = (shifts_list[i] - combined_means[i]) / combined_std[i]
-
-    # Split up the data into train and validation
-#    seed = np.random.randint(1, 100)
-#    train_idxs, val_idxs = next(skl.model_selection.ShuffleSplit(n_splits=1, random_state=seed, test_size=0.2, train_size=None).split(feats))
-#    feat_train, feat_val = feats[train_idxs], feats[val_idxs]
-#    shifts_train_list = []
-#    shifts_val_list = []
-#    for i in range(len(atoms)):
-#        shifts_train_list.append(shifts_list[0][train_idxs])
-#        shifts_val_list.append(shifts_list[0][val_idxs])
-    
-    dim_in = combined_feats.shape[1]
-    
-    # If using noise, make data generators -- Not Implemented for MTL
-    if noise:
-        raise ValueError('Noise is not yet implemented for MTL so this kwarg must have value None')
-#        train_dat, val_dat = skl.model_selection.train_test_split(data, test_size=0.2, random_state=seed)
-#        train_gen = res_level_generator(train_dat, atom, noise=noise, noise_type=noise_type, noise_dist=noise_dist, batch_size=batch_size, norm_shifts=(shifts_mean, shifts_std))
-#        full_gen = res_level_generator(train_dat, atom, noise=noise, noise_type=noise_type, noise_dist=noise_dist, batch_size=batch_size, norm_shifts=(shifts_mean, shifts_std))
-#        n_train = len(train_dat) // batch_size # Number of full batches per epoch
-#        rem_train = len(train_dat) % batch_size # Size of extra batch
-#        n_full = len(dat) // batch_size
-#        rem_full = len(dat) % batch_size
-#        train_steps = min(rem_train, 1) + n_train
-#        full_steps = min(rem_full, 1) + n_full
-
-    # Set a boolean variable for presence of dropout layers
-    if (float(do) > 0) and (not drop_last_only):
-        dropout = True
+    feats, shifts_list, shifts_means, shifts_stds = mtl_data_prep(dat, atoms, reject_outliers=reject_outliers, norm_shifts=norm_shifts, mode='testing')
+    if masked:
+        combined_feats, combined_shifts, combined_means, combined_std = mtl_data_prep(dat, atoms, reject_outliers=reject_outliers, norm_shifts=norm_shifts, mode='masked')
+        loss_fn = masked_mse
     else:
-        dropout = False
-
-    opt = make_optimizer(opt_type, lrate[0], mom, dec, nest, clip_norm=clip_norm, clip_val=clip_val, opt_override=opt_override)
-    
-    regularizer = make_reg(reg, reg_type)
-    
-    # Build model
-    # First do pre-training of separate models for each atom
-    clayer_dict = {}
-    layer_dict = {}
-    mod_dict = {}
-    pre_train_layers = []
-    for at_idx, atom in enumerate(atoms):
-        layer_dict['input_layer_' + atom] = keras.layers.Input(shape=(dim_in,), name='input_layer_'+atom)
-        layer_dict['interout_-1_' + atom] = keras.layers.Lambda(lambda x: x)(layer_dict['input_layer_' + atom])
-        for idx, i in enumerate(arch):
-            if activ is 'prelu':
-                layer_dict['dense_' + str(idx) + '_' + atom] = keras.layers.Dense(units=i, activation='linear', kernel_regularizer=regularizer, name='dense_' + str(idx) + '_' + atom)(layer_dict['interout_' + str(idx-1) + '_' + atom])
-                layer_dict['prelu_' + str(idx) + '_' + atom] = keras.layers.advanced_activations.PReLU(name='prelu_' + str(idx) + '_' + atom)(layer_dict['dense_' + str(idx) + '_' + atom])
-                pre_train_layers += ['dense_' + str(idx) + '_' + atom]
-                pre_train_layers += ['prelu_' + str(idx) + '_' + atom]
-            else:
-                layer_dict['dense_' + str(idx) + '_' + atom] = keras.layers.Dense(units=i, activation=activ, kernel_regularizer=regularizer, name='dense_' + str(idx) + '_' + atom)(layer_dict['interout_' + str(idx-1) + '_' + atom])
-                pre_train_layers += ['dense_' + str(idx) + '_' + atom]
-            if bnorm:
-                if activ is 'prelu':
-                    layer_dict['bn_' + str(idx) + '_' + atom] = keras.layers.BatchNormalization(name='bn_' + str(idx) + '_' + atom)(layer_dict['prelu_' + str(idx) + '_' + atom])
-                else:
-                    layer_dict['bn_' + str(idx) + '_' + atom] = keras.layers.BatchNormalization(name='bn_' + str(idx) + '_' + atom)(layer_dict['dense_' + str(idx) + '_' + atom])
-                pre_train_layers += ['bn_' + str(idx) + '_' + atom]
-            if dropout:
-                if bnorm:
-                    layer_dict['drop_' + str(idx) + '_' + atom] = keras.layers.Dropout(do)(layer_dict['bn_' + str(idx) + '_' + atom])
-                else:
-                    if activ is 'prelu':
-                        layer_dict['drop_' + str(idx) + '_' + atom] = keras.layers.Dropout(do)(layer_dict['prelu_' + str(idx) + '_' + atom])
-                    else:
-                        layer_dict['drop_' + str(idx) + '_' + atom] = keras.layers.Dropout(do)(layer_dict['dense_' + str(idx) + '_' + atom])
-                layer_dict['interout_' + str(idx) + '_' + atom] = keras.layers.Lambda(lambda x: x)(layer_dict['drop_' + str(idx) + '_' + atom])
-            else:
-                if bnorm:
-                    layer_dict['interout_' + str(idx) + '_' + atom] = keras.layers.Lambda(lambda x: x)(layer_dict['bn_' + str(idx) + '_' + atom])
-                else:
-                    if activ is 'prelu':
-                        layer_dict['interout_' + str(idx) + '_' + atom] = keras.layers.Lambda(lambda x: x)(layer_dict['prelu_' + str(idx) + '_' + atom])
-                    else:
-                        layer_dict['interout_' + str(idx) + '_' + atom] = keras.layers.Lambda(lambda x: x)(layer_dict['dense_' + str(idx) + '_' + atom])
-#        if drop_last_only:
-#            mod.add(keras.layers.Dropout(do))
-        layer_dict['output_layer_' + atom] = keras.layers.Dense(units=1, activation='linear', name='output_layer_' + atom)(layer_dict['interout_' + str(len(arch)-1) + '_' + atom])
-        pre_train_layers += ['output_layer_' + atom]
-        these_feats = feats[at_idx]
-        these_shifts = shifts_list[at_idx][:, at_idx]
-                
-        mod_dict['model_' + atom] = keras.models.Model(inputs=layer_dict['input_layer_' + atom], outputs=layer_dict['output_layer_' + atom])
-        mod_dict['model_' + atom].compile(loss='mean_squared_error', optimizer=opt)
-        mod_dict['model_' + atom].fit(these_feats, these_shifts, batch_size=batch_size, epochs=epochs[at_idx])
-#    return mod_dict['model_' + 'H']
-
-
-    # Now build a new model that combines sub-models
-    clayer_dict['combined_input_layer'] = keras.layers.Input(shape=(dim_in,), name='combined_input_layer')
-    for atom in atoms:
-        clayer_dict['combined_input_-1' + '_' + atom] = keras.layers.Lambda(lambda x: x, name='combined_input_-1_'+atom)(clayer_dict['combined_input_layer'])
-    for idx, i in enumerate(arch):
-        for at_idx, atom in enumerate(atoms):
-            if activ is 'prelu':
-                clayer_dict['combined_dense_' + str(idx) + '_' + atom] = keras.layers.Dense(units=i, activation='linear', kernel_regularizer=regularizer, name='combined_dense_' + str(idx) + '_' + atom)(clayer_dict['combined_input_' + str(idx-1) + '_' + atom])
-                # Initialize weight matrices of trainable layers to be as in pre-trained sub-models
-                #clayer_dict['combined_dense_' + str(idx) + '_' + atom].set_weights(layer_dict['dense_' + str(idx) + '_' + atom].get_weights())
-                clayer_dict['combined_prelu_' + str(idx) + '_' + atom] = keras.layers.advanced_activations.PReLU(name='combined_prelu_' + str(idx) + '_' + atom)(clayer_dict['combined_dense_' + str(idx) + '_' + atom])
-                #clayer_dict['combined_prelu_' + str(idx) + '_' + atom].set_weights(layer_dict['prelu_' + str(idx) + '_' + atom].get_weights())
-            else:
-                clayer_dict['combined_dense_' + str(idx) + '_' + atom] = keras.layers.Dense(units=i, activation=activ, kernel_regularizer=regularizer, name='combined_dense_' + str(idx) + '_' + atom)(clayer_dict['combined_input_' + str(idx-1) + '_' + atom])
-                #clayer_dict['combined_dense_' + str(idx) + '_' + atom].set_weights(layer_dict['dense_' + str(idx) + '_' + atom].get_weights())
-            if bnorm:
-                if activ is 'prelu':
-                    clayer_dict['combined_bn_' + str(idx) + '_' + atom] = keras.layers.BatchNormalization(name='combined_bn_' + str(idx) + '_' + atom)(clayer_dict['combined_prelu_' + str(idx) + '_' + atom])
-                else:
-                    clayer_dict['combined_bn_' + str(idx) + '_' + atom] = keras.layers.BatchNormalization(name='combined_bn_' + str(idx) + '_' + atom)(clayer_dict['combined_dense_' + str(idx) + '_' + atom])
-                #clayer_dict['combined_bn_' + str(idx) + '_' + atom].set_weights(layer_dict['bn_' + str(idx) + '_' + atom].get_weights())
-            if dropout:
-                if bnorm:
-                    clayer_dict['combined_drop_' + str(idx) + '_' + atom] = keras.layers.Dropout(do, name='combined_drop_' + str(idx) + '_' + atom)(clayer_dict['combined_bn_' + str(idx) + '_' + atom])
-                else:
-                    if activ is 'prelu':
-                        clayer_dict['combined_drop_' + str(idx) + '_' + atom] = keras.layers.Dropout(do, name='combined_drop_' + str(idx) + '_' + atom)(clayer_dict['combined_prelu_' + str(idx) + '_' + atom])
-                    else:
-                        clayer_dict['combined_drop_' + str(idx) + '_' + atom] = keras.layers.Dropout(do, name='combined_drop_' + str(idx) + '_' + atom)(clayer_dict['combined_dense_' + str(idx) + '_' + atom])
-                clayer_dict['combined_interout_' + str(idx) + '_' + atom] = keras.layers.Lambda(lambda x: x, name='combined_interout_' + str(idx) + '_' + atom)(clayer_dict['combined_drop_' + str(idx) + '_' + atom])
-                        
-            # Define an intermediate output layer for this index and for each atom
-#            if dropout:
-#                clayer_dict['combined_interout_' + str(idx) + '_' atom] = keras.layers.Dense(units=1, activation='linear', name='combined_interout_' + str(idx) + '_' atom)(clayer_dict['combined_drop_' + str(idx) + '_' + atom])
-            else:
-                if bnorm:
-                    clayer_dict['combined_interout_' + str(idx) + '_' + atom] = keras.layers.Dense(units=1, activation='linear', name='combined_interout_' + str(idx) + '_' + atom)(clayer_dict['combined_bn_' + str(idx) + '_' + atom])
-                else:
-                    if activ is 'prelu':
-                        clayer_dict['combined_interout_' + str(idx) + '_' + atom] = keras.layers.Dense(units=1, activation='linear', name='combined_interout_' + str(idx) + '_' + atom)(clayer_dict['combined_prelu_' + str(idx) + '_' + atom])
-                    else:
-                        clayer_dict['combined_interout_' + str(idx) + '_' + atom] = keras.layers.Dense(units=1, activation='linear', name='combined_interout_' + str(idx) + '_' + atom)(clayer_dict['combined_dense_' + str(idx) + '_' + atom])
-        
-        if cs_mode == 'dense':
-        # Concatenate the intermediate outputs for cross-stitching
-            clayer_dict['concat_' + str(idx)] = keras.layers.concatenate([clayer_dict['combined_interout_' + str(idx) + '_' + a] for a in atoms], name='concat_' + str(idx))
-            concat_size = i * len(atoms)
-            clayer_dict['cross_stitch_' + str(idx)] = keras.layers.Dense(units=concat_size, kernel_initializer='identity', use_bias=False, name='cross_stitch_' + str(idx))(clayer_dict['concat_' + str(idx)])
-            # Split the resulting output from the cross_stitch
-            for at_idx, atom in enumerate(atoms):
-                clayer_dict['combined_input_' + str(idx) + '_' + atom] = keras.layers.Lambda(lambda x: x[:, at_idx*i : i*(at_idx + 1)])(clayer_dict['cross_stitch_' + str(idx)])
-            
-        # Can instead try restricted cross stitch that has far fewer parameters:
-#       clayer_dict['same_stitch_' + idx] = keras.layersDense(units=1, kernel_initializer='identity') 
-#        for at_idx, atom in enumerate(atoms):
-#            for at_idx2 in range(at_idx+1, len(atoms)):
-        if cs_mode == 'affine_combo':
-            for atom in atoms:
-                ordered_names = ['combined_interout_' + str(idx) + '_' + atom]
-                ordered_names += ['combined_interout_' + str(idx) + '_' + at for at in atoms if at is not atom]
-                clayer_dict['cross_stitch_' + str(idx) + '_' + atom] = ConvexCombination(name='cross_stitch_' + str(idx) + '_' + atom)([clayer_dict[o_name] for o_name in ordered_names])
-                clayer_dict['combined_input_' + str(idx) + '_' + atom] = keras.layers.Lambda(lambda x: x)(clayer_dict['cross_stitch_' + str(idx) + '_' + atom])
-#        ordered_names = ['combined_interout_' + str(idx) + '_' + atom for atom in atoms]
-#        [clayer_dict['cross_stitch_' + str(idx) + '_' + atom] for atom in atom_names] = ConvexCombination()([clayer_dict[o_name] for o_name in ordered_names])
-                
-                
-        
-
-        
-    for atom in atoms:
-        clayer_dict['combined_output_layer_' + atom] = keras.layers.Dense(units=1, activation='linear', name='combined_output_layer_' + atom)(clayer_dict['combined_input_' + str(len(arch)-1) + '_' + atom])
-        #clayer_dict['combined_output_layer_' + atom].set_weights(clayer_dict['output_layer_' + atom].get_weights())
-                    
-                    
-#        if dropout:
-#            layer_dict['combined_output_layer_' + atom] = keras.layers.Dense(units=1, activation='linear', name='combined_output_layer_' + atom)(layer_dict['combined_drop_' + str(len(arch)-1) + '_' + atom])
-#        else:
-#            if bnorm:
-#                layer_dict['combined_output_layer_' + atom] = keras.layers.Dense(units=1, activation='linear', name='combined_output_layer_' + atom)(layer_dict['combined_bn_' + str(len(arch)-1) + '_' + atom])
-#            else:
-#                if activ is 'prelu':
-#                    layer_dict['combined_output_layer_' + atom] = keras.layers.Dense(units=1, activation='linear', name='combined_output_layer_' + atom)(layer_dict['combined_prelu_' + str(len(arch)-1) + '_' + atom])
-#                else:
-#                    layer_dict['combined_output_layer_' + atom] = keras.layers.Dense(units=1, activation='linear', name='combined_output_layer_' + atom)(layer_dict['combined_dense_' + str(len(arch)-1) + '_' + atom])
-#        
-#        layer_dict['combined_output_layer_' + atom].set_weights(layer_dict['output_layer_' + atom].get_weights())
-#    
-    mod_dict['combined_mod'] = keras.models.Model(inputs=clayer_dict['combined_input_layer'], outputs=[clayer_dict['combined_output_layer_' + atom] for atom in atoms])
-    
-    # Need to make an optimizer with layer-dependent learning-rates so cross stitch layers learn faster than the pre-trained layers
-    cs_names = ['cross_stitch_' + str(idx) + '_' + atom for idx in range(len(arch)) for atom in atoms]
-    mults = {}
-    for name in clayer_dict.keys():
-        mults[name] = 1 / cs_mult
-    for name in cs_names:
-        mults[name] = 1
-    opt2 = Adam_lr_mult(lr=lrate[1], multipliers=mults, **opt2_kwargs)
-    
-    mod_dict['combined_mod'].compile(loss='mean_squared_error', optimizer=opt2)
-    
-    # re-initialize weights to pre-trained values
-    for name in pre_train_layers:
-        mod_dict['combined_mod'].get_layer('combined_' + name).set_weights(mod_dict['model_' + name.split('_')[-1]].get_layer(name).get_weights())
-    
-    # Freeze BN layers.  Not sure if this will help or not
-    for layer in mod_dict['combined_mod'].layers:
-        if isinstance(layer, keras.layers.normalization.BatchNormalization):
-            layer._per_input_updates = {}
-    
-    mod_dict['combined_mod'].fit(combined_feats, combined_shifts, batch_size=batch_size, epochs=epochs[-1])
-    
-    
-#    # Process all features together first then give separate caps for each output
-#    in_feats = keras.layers.Input(shape=(dim_in,), name='feature_input')
-#    inp = keras.layers.Lambda(lambda x: x)(in_feats)
-#    # Define a dictionary to hold the intermediate layers for each separate cap
-#    atom_layer_dict = {}
-#    for i in arch[0]:
-#        if activ == 'prelu':
-#            inp = keras.layers.Dense(i, activation='linear', kernel_regularizer=regularizer)(inp)
-#            inp = keras.layers.advanced_activations.PReLU()(inp)
-#        else:
-#            inp = keras.layers.Dense(i, activation=activ, kernel_regularizer=regularizer)(inp)
-#        if bnorm:
-#            inp = keras.layers.BatchNormalization()(inp)
-#        if dropout:
-#            inp = keras.layers.Dropout(do)(inp)
-#
-#    for atom in atoms:
-#        atom_layer_dict[atom] = keras.layers.Lambda(lambda x: x)(inp)
-#        for i in arch[1]:
-#            if activ == 'prelu':
-#                atom_layer_dict[atom] = keras.layers.Dense(i, activation='linear', kernel_regularizer=regularizer)(atom_layer_dict[atom])
-#                atom_layer_dict[atom] = keras.layers.advanced_activations.PReLU()(atom_layer_dict[atom])
-#            else:
-#                atom_layer_dict[atom] = keras.layers.Dense(i, activation=activ, kernel_regularizer=regularizer)(atom_layer_dict[atom])
-#            if bnorm:
-#                atom_layer_dict[atom] = keras.layers.BatchNormalization()(atom_layer_dict[atom])
-#            if dropout:
-#                atom_layer_dict[atom] = keras.layers.Dropout(do)(atom_layer_dict[atom])
-#            
-#        atom_layer_dict[atom] = keras.layers.Dense(1, activation='linear', name=atom+'_out')(atom_layer_dict[atom])
-#
-#    # Define model and compile
-#    mod = keras.models.Model(inputs=in_feats, outputs=[atom_layer_dict[atom] for atom in atoms])
-##    mod = keras.models.Model(inputs=in_feats, outputs=out1)
-#    mod.compile(loss='mean_squared_error', optimizer=opt)
-    
-       
-#    if lsuv:
-#        mod = LSUVinit(mod, feat_train[:lsuv_batch])
-        
-    # Get initial weights to reset model after pretraining
-#    weights = mod.get_weights()
-
-    # Do early-stopping routine if desired 
-    if early_stop is not None:
-        raise ValueError('Early-Stopping not yet implemented so value for this kwarg must be None')
-        if noise is not None:
-            raise ValueError('Noise not implemented so value for this kwarg must be None')
-#            val_epochs, hist_list, val_list, param_list = early_stopping(mod, early_stop, tol, per, epochs, min_epochs, batch_size, feat_train=None, shift_train=None, feat_val=feat_val, shift_val=shift_val, train_gen=train_gen, train_steps=train_steps, noise=noise)
-        else:
-            val_epochs, hist_list, val_list, param_list = early_stopping(mod_dict['combined_mod'], early_stop, tol, per, epochs, min_epochs, batch_size, feat_train=feat_train, shift_train=shifts_train_list, feat_val=feat_val, shift_val=shifts_val_list, train_gen=None, train_steps=None, noise=noise, mtl=True)
-    else:
-        hist_list = []
-        val_list = []
-        param_list = []
-        val_epochs = epochs
-
-    # Retrain model on full dataset for same number of epochs as was
-    # needed to obtain min validation loss
-#    mod.set_weights(weights)
-#    if noise:
-#        pass
-#        mod.fit_generator(full_gen, steps_per_epoch=full_steps, epochs=val_epochs)
-#    else:
-#        #mod.fit(feats, shift_norm, batch_size=batch_size, epochs=val_epochs)
-#        mod.fit(feats, shifts_list, batch_size=batch_size, epochs=val_epochs)
-
-    return shifts_means, shifts_stds, val_list, hist_list, param_list, mod_dict
-
-
-
-def stitch_mtl_fc2(data, atoms, arch, activ='prelu', lrate=[0.001, 0.001], mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None, early_stop=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0.0, clip_norm=0.0, opt2_kwargs={}, cs_mult=1, reject_outliers=None, noise=None, cs_mode='affine_combo', hard_burnin=False, noise_type='angle', noise_dist='uniform', batch_size=64, lsuv_batch=2048, residual=False):
-    '''Constructs a model from the given features and shifts for
-    the requested atom.  The model is trained for the given number
-    of epochs with the loss being checked every per epochs.  Training
-    stops when this loss increases by more than tol. The arch argument
-    is a list specifying the number of hidden units at each layer.
-    
-    args:
-        data - Feature and target data (Pandas DataFrame)
-        atom - Name of atom to predict (Str)
-        arch - List of the number of neurons per layer (List)
-        activ - Activation function to use (Str - prelu, relu, tanh, etc.)
-        lrate - Learning rate for SGD (Float)
-        mom - Momentum for SGD (Float)
-        dec - Decay for SGD learning rate (Float)
-        epochs - Maximum number of epochs to train (Int)
-        min_epochs - Minimum number of epochs to train (Int)
-        per - Number of epochs in a test strip for early-stopping (Int)
-        tol - Early-stopping parameter (Float)
-        opt_type - Optimization procedure to use (Str - sgd, rmsprop, adam, etc.)
-        do - Dropout percentage between 0 and 1 (Float)
-        drop_last_only - Apply dropout only at last layer (Bool)
-        reg - Parameter for weight regularization of dense layers (Float)
-        reg_type - Type of weight regularization to use (Str - L1 or L2)
-        early-stop - Whether or not and how to do early-stopping (None or Str - 'GL', 'PQ', or 'UP')
-        bnorm - Use batch normalization (Bool)
-        lsuv - Use layer-wise sequential unit variance initialization (Bool)
-        nest - Use Nesterov momentum (Bool)
-        norm_shifts - Normalize the target shifts rather than using raw values (Bool)
-        opt_override - Override default parameters for optimization (Bool)
-        clip_val - Clip values parameter for optimizer (Float)
-        clip_norm - Clip norm parameter for optimizer (Float)
-        reject_outliers - Eliminate entries for which the targets differ by more than this number of standard deviations (Float or None)
-        noise - Dictionary of noise magnitudes for each column if using fit_generator and
-                want to inject noise (Dict or Float/Int)
-        noise_type - Argument to be fed to noise generator (Str) -- See res_level_generator()
-        noise_dist - Distribution from which to draw noise values -- "uniform" or "normal" (Str)
-        batch_size - Number of examples per batch (Int)
-        lsuv_batch - Number of examples used for LSUV initialization
-        
-    returns:
-        
-    '''
-    dat = data.copy()
-
-        
-    
-    feats, shifts_list, shifts_means, shifts_stds = mtl_data_prep(dat, atoms, reject_outliers=reject_outliers, norm_shifts=norm_shifts, testing=True)
-    combined_feats, combined_shifts, combined_means, combined_std = mtl_data_prep(dat, atoms, reject_outliers=reject_outliers, norm_shifts=norm_shifts)
+        combined_feats, combined_shifts, combined_means, combined_std = mtl_data_prep(dat, atoms, reject_outliers=reject_outliers, norm_shifts=norm_shifts)
+        loss_fn = 'mean_squared_error'
     
     if norm_shifts:
         for i in range(len(shifts_list)):
@@ -2447,7 +2180,7 @@ def stitch_mtl_fc2(data, atoms, arch, activ='prelu', lrate=[0.001, 0.001], mom=0
         mults[name] = 1
     opt2 = Adam_lr_mult(lr=lrate[1], multipliers=mults, **opt2_kwargs)
     
-    mod_dict['combined_mod'].compile(loss='mean_squared_error', optimizer=opt2)
+    mod_dict['combined_mod'].compile(loss=loss_fn, optimizer=opt2)
     
     if hard_burnin:
         # Make hard multi-task network for burn-in
@@ -2517,7 +2250,7 @@ def stitch_mtl_fc2(data, atoms, arch, activ='prelu', lrate=[0.001, 0.001], mom=0
             hlayer_dict['output_layer_' + 'hmtl' + '_' + atom] = keras.layers.Dense(units=1, activation='linear', name='output_layer_' + 'hmtl' + '_' + atom)(hlayer_dict['interout_' + str(last_idx) + '_' + 'hmtl' + '_' + atom])
         # Compile and train hard multi-task network
         mod_dict['model_' + 'hmtl'] = keras.models.Model(inputs=hlayer_dict['input_layer_' + 'hmtl'], outputs=[hlayer_dict['output_layer_' + 'hmtl' + '_' + at] for at in atoms])
-        mod_dict['model_' + 'hmtl'].compile(loss='mean_squared_error', optimizer=opt)
+        mod_dict['model_' + 'hmtl'].compile(loss=loss_fn, optimizer=opt)
         mod_dict['model_' + 'hmtl'].fit(combined_feats, combined_shifts, batch_size=batch_size, epochs=hard_burnin)
         
         # Use hard MTL network weights to initialize single-task sub networks
@@ -3920,7 +3653,7 @@ def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, per=5, out
     if out=='full':
         return epochs_list, train_rmsd_list, test_rmsd_list
 
-def train_val_test(train_data,val_data,test_data,atom,feval,model,mod_args, mod_kwargs, per=5, out='summary', mod_type='fc'):
+def train_val_test(train_data, val_data, test_data, atom, feval, model, mod_args, mod_kwargs, per=5, out='summary', mod_type='fc'):
     '''
     Function for training a model with specified training data and validation data, and evaluate the performance for the trained model on the testing data
     '''
