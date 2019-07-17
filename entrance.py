@@ -78,9 +78,9 @@ def Lift_Space(dataset,participating_cols,increased_dim,w,b):
 
 
 # read all files
-data_path_train= "../datasets/datafiles/train"
-data_path_val= "../datasets/datafiles/validation"
-data_path_test="../datasets/datafiles/test"
+data_path_train= "datasets/train"
+data_path_val= "datasets/validation"
+data_path_test="datasets/test"
 train_files=[]
 val_files=[]
 test_files=[]
