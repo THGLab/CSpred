@@ -185,8 +185,7 @@ if configs.get("fixed_val_test",False):
     train_val_test(df_train,df_val,df_test,configs["atom_list"],eval(configs["evaluation"]),eval(configs["model"]),configs["args"],configs["kwargs"],mod_type=configs["mod_type"])
     with open('results.csv','a') as f:
         f.write(config_file.split("/")[-1].replace(".json","")+"\n")
-        csv_writer=csv.writer(f,'excel')
-        csv_writer.writerow("Epochs: %d\n Train_rmsd: %d\n Val_rmsd: %d\n Test_rmsd: %d"%(val_eps,train_rmsd,val_rmsd,test_rmsd))
+        f.write("Epochs: %d\n Train_rmsd: %d\n Val_rmsd: %d\n Test_rmsd: %d\n\n"%(val_eps,train_rmsd,val_rmsd,test_rmsd))
     if "mod_saving_add" in configs:
         mod_saving_add=configs["mod_saving_add"]
     else:
