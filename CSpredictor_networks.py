@@ -3679,11 +3679,13 @@ def train_val_test(train_data, val_data, test_data, atom, feval, model, mod_args
             rej_out = None
         test_rmsd = feval(test_data, mod, atom, mean=mean, std=std, reject_outliers=rej_out,split_numeric=split_numeric)
         train_rmsd = feval(pd.concat([train_data,val_data]), mod, atom, mean=mean, std=std, reject_outliers=rej_out,split_numeric=split_numeric)
+        val_rmsd=np.sqrt(np.min(val_arr))*std
         print('Results this round for atom ' + str(atom) + ':')
         print("Training epochs:",val_eps)
         print("Training error:",train_rmsd)
+        print("Validation error:",val_rmsd)
         print("Testing error:",test_rmsd)
-    return val_eps,train_rmsd,test_rmsd,mod
+    return val_eps,train_rmsd,val_rmsd,test_rmsd,mod
 
 
 def kfold_predictions(k, data, atom, model, mod_args, mod_kwargs, per=5, out='summary', rnn=False, window=10, reuse_val_eps=True): # THIS is to edit for showing distribution of predictions
