@@ -2,6 +2,7 @@
     "keras_backend": "cntk",
     "fixed_val_test": true,
     "k":3,
+    "classification_model_path": null,
     "add_res_spec_feats": true,
     "add_onehot_resname": false,
     "power_cols": true,

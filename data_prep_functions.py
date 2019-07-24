@@ -19,9 +19,11 @@ from Bio.SeqUtils import IUPACData
 atom_names = ['HA', 'H', 'CA', 'CB', 'C', 'N']
 sparta_results = [0.25, 0.49, 0.94, 1.14, 1.09, 2.45] # Advertised performance of SPARTA+
 paper_order = ['Ala', 'Cys','Asp','Glu','Phe','Gly','His','Ile','Lys','Leu','Met','Asn','Pro','Gln','Arg','Ser','Thr','Val','Trp','Tyr'] # The amino acid order used in Sparta+ data and blosum matrix (1-letter alphabetic).
-#paper_order = [i.upper() for i in paper_order] # Might as well keep the AA 3-letter codes as lower case since we can .upper() them whenever
-# yangs_blos = pd.read_table('/Users/kcbennett/Downloads/BLOSUM62.tab', skiprows=2, header=None, names=list(IUPACData.protein_letters_1to3.keys()), sep=r"\s+") # The blosum matrix used by Sparta+
-# resname_blos_dict = {name.upper() : list(yangs_blos.loc[IUPACData.protein_letters_3to1[name]])[:5] for name in paper_order}
+
+# The dictionary storing the hydrophobicity for different residues
+# Literature: Wimley WC & White SH (1996). Nature Struct. Biol. 3:842-848. 
+hydrophobic_dict={'LYS': 1.81, 'GLN': 0.19, 'THR': 0.11, 'ASP': 0.5, 'GLU': 0.12, 'ARG': 1.0, 'LEU': -0.69, 'TRP': -0.24, 'VAL': -0.53, 
+'ILE': -0.81, 'PRO': -0.31, 'MET': -0.44, 'ASN': 0.43, 'SER': 0.33, 'ALA': 0.33, 'GLY': 1.14, 'TYR': 0.23, 'HIS': -0.06, 'PHE': -0.58, 'CYS': 0.22}
 
 # For easier access, define the names of different feature columns.
 # These are the names that we assign in our own feature extraction routine.
@@ -154,6 +156,30 @@ ip1_cols += ['BLOSUM62_NUM_'+list(IUPACData.protein_letters_3to1.keys())[i].uppe
 im1_cols_bin += ['BINSEQREP_'+ list(IUPACData.protein_letters_3to1.keys())[i].upper() + '_i-1' for i in range(20)]
 ip1_cols_bin += ['BINSEQREP_'+ list(IUPACData.protein_letters_3to1.keys())[i].upper() + '_i+1' for i in range(20)]
 
+# Some other columns
+protein_letters=[code.upper() for code in IUPACData.protein_letters_3to1.keys()]
+sp_feat_cols=['BLOSUM62_NUM_ALA_i-1', 'BLOSUM62_NUM_CYS_i-1', 'BLOSUM62_NUM_ASP_i-1', 'BLOSUM62_NUM_GLU_i-1', 'BLOSUM62_NUM_PHE_i-1', 
+'BLOSUM62_NUM_GLY_i-1', 'BLOSUM62_NUM_HIS_i-1', 'BLOSUM62_NUM_ILE_i-1', 'BLOSUM62_NUM_LYS_i-1', 'BLOSUM62_NUM_LEU_i-1', 'BLOSUM62_NUM_MET_i-1', 
+'BLOSUM62_NUM_ASN_i-1', 'BLOSUM62_NUM_PRO_i-1', 'BLOSUM62_NUM_GLN_i-1', 'BLOSUM62_NUM_ARG_i-1', 'BLOSUM62_NUM_SER_i-1', 'BLOSUM62_NUM_THR_i-1', 
+'BLOSUM62_NUM_VAL_i-1', 'BLOSUM62_NUM_TRP_i-1', 'BLOSUM62_NUM_TYR_i-1', 'PHI_SIN_i-1', 'PHI_COS_i-1', 'PSI_SIN_i-1', 'PSI_COS_i-1', 'CHI1_SIN_i-1',
+ 'CHI1_COS_i-1', 'CHI1_EXISTS_i-1', 'CHI2_SIN_i-1', 'CHI2_COS_i-1', 'CHI2_EXISTS_i-1', 'BLOSUM62_NUM_ALA_i', 'BLOSUM62_NUM_CYS_i', 'BLOSUM62_NUM_ASP_i',
+ 'BLOSUM62_NUM_GLU_i', 'BLOSUM62_NUM_PHE_i', 'BLOSUM62_NUM_GLY_i', 'BLOSUM62_NUM_HIS_i', 'BLOSUM62_NUM_ILE_i', 'BLOSUM62_NUM_LYS_i', 'BLOSUM62_NUM_LEU_i',
+ 'BLOSUM62_NUM_MET_i', 'BLOSUM62_NUM_ASN_i', 'BLOSUM62_NUM_PRO_i', 'BLOSUM62_NUM_GLN_i', 'BLOSUM62_NUM_ARG_i', 'BLOSUM62_NUM_SER_i', 'BLOSUM62_NUM_THR_i',
+ 'BLOSUM62_NUM_VAL_i', 'BLOSUM62_NUM_TRP_i', 'BLOSUM62_NUM_TYR_i', 'PHI_SIN_i', 'PHI_COS_i', 'PSI_SIN_i', 'PSI_COS_i', 'CHI1_SIN_i', 'CHI1_COS_i', 
+ 'CHI1_EXISTS_i', 'CHI2_SIN_i', 'CHI2_COS_i', 'CHI2_EXISTS_i', 'BLOSUM62_NUM_ALA_i+1', 'BLOSUM62_NUM_CYS_i+1', 'BLOSUM62_NUM_ASP_i+1', 
+ 'BLOSUM62_NUM_GLU_i+1', 'BLOSUM62_NUM_PHE_i+1', 'BLOSUM62_NUM_GLY_i+1', 'BLOSUM62_NUM_HIS_i+1', 'BLOSUM62_NUM_ILE_i+1', 'BLOSUM62_NUM_LYS_i+1', 
+ 'BLOSUM62_NUM_LEU_i+1', 'BLOSUM62_NUM_MET_i+1', 'BLOSUM62_NUM_ASN_i+1', 'BLOSUM62_NUM_PRO_i+1', 'BLOSUM62_NUM_GLN_i+1', 'BLOSUM62_NUM_ARG_i+1',
+'BLOSUM62_NUM_SER_i+1', 'BLOSUM62_NUM_THR_i+1', 'BLOSUM62_NUM_VAL_i+1', 'BLOSUM62_NUM_TRP_i+1', 'BLOSUM62_NUM_TYR_i+1', 'PHI_SIN_i+1', 'PHI_COS_i+1',
+'PSI_SIN_i+1', 'PSI_COS_i+1', 'CHI1_SIN_i+1', 'CHI1_COS_i+1', 'CHI1_EXISTS_i+1', 'CHI2_SIN_i+1', 'CHI2_COS_i+1', 'CHI2_EXISTS_i+1', 'O__EXISTS_i-1',
+'O_d_HA_i-1', 'O__COS_A_i-1', 'O__COS_H_i-1', 'HN__EXISTS_i', 'HN_d_HA_i', 'HN__COS_A_i', 'HN__COS_H_i', 'Ha__EXISTS_i', 'Ha_d_HA_i', 'Ha__COS_A_i', 
+'Ha__COS_H_i', 'O__EXISTS_i', 'O_d_HA_i', 'O__COS_A_i', 'O__COS_H_i', 'HN__EXISTS_i+1', 'HN_d_HA_i+1', 'HN__COS_A_i+1', 'HN__COS_H_i+1', 'S2_i-1', 'S2_i',
+ 'S2_i+1']
+spartap_cols=sp_feat_cols+atom_names+[a+"_RC" for a in atom_names]
+col_square=["%s_%s_%s"%(a,b,c) for a in ['PHI','PSI'] for b in ['COS','SIN'] for c in ['i-1','i','i+1']]  
+dropped_cols=["DSSP_%s_%s"%(a,b) for a in ["PHI","PSI"] for b in ['i-1','i','i+1']]+["BMRB_RES_NUM","MATCHED_BMRB","CG","HA2_RING","HA3_RING","RCI_S2"]
+col_lift=[col for col in sp_feat_cols if "BLOSUM" not in col and "_i-1" not in col and "_i+1" not in col]
+non_numerical_cols=['3_10_HELIX_SS_i',"A_HELIX_SS_i","BEND_SS_i","B_BRIDGE_SS_i","CHI1_EXISTS_i","CHI2_EXISTS_i","HN__EXISTS_i","Ha__EXISTS_i","NONE_SS_i","O__EXISTS_i","PI_HELIX_SS_i","STRAND_SS_i","TURN_SS_i"]+protein_letters
+
 # These are the names of the columns that are not in Sparta+ but are in the un-augmented features from our extraction
 cols_notinsp = dssp_cols + hse_cols + ext_seq_cols
 
@@ -182,6 +208,7 @@ try:
 except FileNotFoundError:
     pass
 
+# Define feature augmentation functions
 
 def feat_pwr(data, columns, pwrs):
     '''Function to augment the feature set by adding new columns corresponding to given powers of selected features.
@@ -205,6 +232,54 @@ def feat_pwr(data, columns, pwrs):
                 dat[new_col_name] = dat[col]**power
     return dat
 
+def Add_res_spec_feats(dataset,include_onehot=True):
+    '''
+    Adding residue specific features into the dataset (only for current residue), including one-hot representation of the residue,
+    and the hydrophobicity of the residue
+    '''
+    if include_onehot:
+        for code in protein_letters:
+            dataset[code]=[int(res==code) for res in dataset['RESNAME']]
+    dataset["HYDROPHOBICITY"]=[hydrophobic_dict[res] for res in dataset['RESNAME']]
+
+# Feature space lifting
+def Lift_Space(dataset,participating_cols,increased_dim,w,b):
+    if w is None:
+        w = np.random.normal(0, 0.1, (len(participating_cols), increased_dim))
+        b = np.random.uniform(0, 2*np.pi, increased_dim)
+    lifted_dat_mat=np.cos(dataset[participating_cols].values.dot(w)+b)
+    for n in range(increased_dim):
+        dataset["Lifted_%d"%n]=lifted_dat_mat[:,n]
+
+def encode_onehot(sequence_feat):
+    '''
+    Encode the sequence features into one-hot representation.
+    sequence_feat: The sequence features that has length of total number of examples (N) and each element
+     is a list of residue names with length (L)  (List/DataFrame)
+    Returns a three-dimensional numpy array that has shape (N,L,20) 
+    '''
+    RES_CODES=sorted([code.upper() for code in IUPACData.protein_letters_3to1.keys()])
+    RES_CODES_DICT={code:idx for idx,code in enumerate(RES_CODES)}
+    onehot=np.zeros((len(sequence_feat),len(sequence_feat[0]),20))
+    for idx_seq,seq in enumerate(sequence_feat):
+        for idx_res,amino_acid in enumerate(seq):
+            if amino_acid in RES_CODES:
+                onehot[idx_seq][idx_res][RES_CODES_DICT[amino_acid]]=1
+    return onehot 
+
+# Adding classification results into features
+def Implant_classification(dataset,model,half_window=20):
+    print("Predicting using classification model...")
+    input_cols=["RESNAME_i-%d"%n for n in range(half_window,0,-1)]+["RESNAME"]+["RESNAME_i+%d"%n for n in range(1,half_window+1)]
+    input_classification=encode_onehot(dataset[input_cols].values)
+    pred=model.predict(input_classification,verbose=1)
+    class_names=["CLASS_"+str(i+1) for i in range(pred.shape[1])]
+    for col in class_names:
+        dataset[col]=0
+    dataset[class_names]=pred
+
+
+# Define purifier functions
 def dihedral_purifier(data, tol=0.001, drop_cols=True, set_nans=True):
     '''Function to purify given data based on eliminating those residues for which Biopython and DSSP disagree on dihedral angles by more than tol in Cos value for Phi_i.
     

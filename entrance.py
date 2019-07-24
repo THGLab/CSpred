@@ -27,54 +27,7 @@ from data_prep_functions import *
 from Bio.SeqUtils import IUPACData
 from keras.constraints import max_norm
 
-# The dictionary storing the hydrophobicity for different residues
-# Literature: Wimley WC & White SH (1996). Nature Struct. Biol. 3:842-848. 
-hydrophobic_dict={'LYS': 1.81, 'GLN': 0.19, 'THR': 0.11, 'ASP': 0.5, 'GLU': 0.12, 'ARG': 1.0, 'LEU': -0.69, 'TRP': -0.24, 'VAL': -0.53, 
-'ILE': -0.81, 'PRO': -0.31, 'MET': -0.44, 'ASN': 0.43, 'SER': 0.33, 'ALA': 0.33, 'GLY': 1.14, 'TYR': 0.23, 'HIS': -0.06, 'PHE': -0.58, 'CYS': 0.22}
 
-all_atoms=['H','HA','C','CA','CB','N']
-protein_letters=[code.upper() for code in IUPACData.protein_letters_3to1.keys()]
-sp_feat_cols=['BLOSUM62_NUM_ALA_i-1', 'BLOSUM62_NUM_CYS_i-1', 'BLOSUM62_NUM_ASP_i-1', 'BLOSUM62_NUM_GLU_i-1', 'BLOSUM62_NUM_PHE_i-1', 
-'BLOSUM62_NUM_GLY_i-1', 'BLOSUM62_NUM_HIS_i-1', 'BLOSUM62_NUM_ILE_i-1', 'BLOSUM62_NUM_LYS_i-1', 'BLOSUM62_NUM_LEU_i-1', 'BLOSUM62_NUM_MET_i-1', 
-'BLOSUM62_NUM_ASN_i-1', 'BLOSUM62_NUM_PRO_i-1', 'BLOSUM62_NUM_GLN_i-1', 'BLOSUM62_NUM_ARG_i-1', 'BLOSUM62_NUM_SER_i-1', 'BLOSUM62_NUM_THR_i-1', 
-'BLOSUM62_NUM_VAL_i-1', 'BLOSUM62_NUM_TRP_i-1', 'BLOSUM62_NUM_TYR_i-1', 'PHI_SIN_i-1', 'PHI_COS_i-1', 'PSI_SIN_i-1', 'PSI_COS_i-1', 'CHI1_SIN_i-1',
- 'CHI1_COS_i-1', 'CHI1_EXISTS_i-1', 'CHI2_SIN_i-1', 'CHI2_COS_i-1', 'CHI2_EXISTS_i-1', 'BLOSUM62_NUM_ALA_i', 'BLOSUM62_NUM_CYS_i', 'BLOSUM62_NUM_ASP_i',
- 'BLOSUM62_NUM_GLU_i', 'BLOSUM62_NUM_PHE_i', 'BLOSUM62_NUM_GLY_i', 'BLOSUM62_NUM_HIS_i', 'BLOSUM62_NUM_ILE_i', 'BLOSUM62_NUM_LYS_i', 'BLOSUM62_NUM_LEU_i',
- 'BLOSUM62_NUM_MET_i', 'BLOSUM62_NUM_ASN_i', 'BLOSUM62_NUM_PRO_i', 'BLOSUM62_NUM_GLN_i', 'BLOSUM62_NUM_ARG_i', 'BLOSUM62_NUM_SER_i', 'BLOSUM62_NUM_THR_i',
- 'BLOSUM62_NUM_VAL_i', 'BLOSUM62_NUM_TRP_i', 'BLOSUM62_NUM_TYR_i', 'PHI_SIN_i', 'PHI_COS_i', 'PSI_SIN_i', 'PSI_COS_i', 'CHI1_SIN_i', 'CHI1_COS_i', 
- 'CHI1_EXISTS_i', 'CHI2_SIN_i', 'CHI2_COS_i', 'CHI2_EXISTS_i', 'BLOSUM62_NUM_ALA_i+1', 'BLOSUM62_NUM_CYS_i+1', 'BLOSUM62_NUM_ASP_i+1', 
- 'BLOSUM62_NUM_GLU_i+1', 'BLOSUM62_NUM_PHE_i+1', 'BLOSUM62_NUM_GLY_i+1', 'BLOSUM62_NUM_HIS_i+1', 'BLOSUM62_NUM_ILE_i+1', 'BLOSUM62_NUM_LYS_i+1', 
- 'BLOSUM62_NUM_LEU_i+1', 'BLOSUM62_NUM_MET_i+1', 'BLOSUM62_NUM_ASN_i+1', 'BLOSUM62_NUM_PRO_i+1', 'BLOSUM62_NUM_GLN_i+1', 'BLOSUM62_NUM_ARG_i+1',
-'BLOSUM62_NUM_SER_i+1', 'BLOSUM62_NUM_THR_i+1', 'BLOSUM62_NUM_VAL_i+1', 'BLOSUM62_NUM_TRP_i+1', 'BLOSUM62_NUM_TYR_i+1', 'PHI_SIN_i+1', 'PHI_COS_i+1',
-'PSI_SIN_i+1', 'PSI_COS_i+1', 'CHI1_SIN_i+1', 'CHI1_COS_i+1', 'CHI1_EXISTS_i+1', 'CHI2_SIN_i+1', 'CHI2_COS_i+1', 'CHI2_EXISTS_i+1', 'O__EXISTS_i-1',
-'O_d_HA_i-1', 'O__COS_A_i-1', 'O__COS_H_i-1', 'HN__EXISTS_i', 'HN_d_HA_i', 'HN__COS_A_i', 'HN__COS_H_i', 'Ha__EXISTS_i', 'Ha_d_HA_i', 'Ha__COS_A_i', 
-'Ha__COS_H_i', 'O__EXISTS_i', 'O_d_HA_i', 'O__COS_A_i', 'O__COS_H_i', 'HN__EXISTS_i+1', 'HN_d_HA_i+1', 'HN__COS_A_i+1', 'HN__COS_H_i+1', 'S2_i-1', 'S2_i',
- 'S2_i+1']
-spartap_cols=sp_feat_cols+all_atoms+[a+"_RC" for a in all_atoms]
-col_square=["%s_%s_%s"%(a,b,c) for a in ['PHI','PSI'] for b in ['COS','SIN'] for c in ['i-1','i','i+1']]  
-dropped_cols=["DSSP_%s_%s"%(a,b) for a in ["PHI","PSI"] for b in ['i-1','i','i+1']]+["BMRB_RES_NUM","MATCHED_BMRB","CG","HA2_RING","HA3_RING","RCI_S2"]
-col_lift=[col for col in sp_feat_cols if "BLOSUM" not in col and "_i-1" not in col and "_i+1" not in col]
-non_numerical_cols=['3_10_HELIX_SS_i',"A_HELIX_SS_i","BEND_SS_i","B_BRIDGE_SS_i","CHI1_EXISTS_i","CHI2_EXISTS_i","HN__EXISTS_i","Ha__EXISTS_i","NONE_SS_i","O__EXISTS_i","PI_HELIX_SS_i","STRAND_SS_i","TURN_SS_i"]+protein_letters
-
-def Add_res_spec_feats(dataset,include_onehot=True):
-    '''
-    Adding residue specific features into the dataset (only for current residue), including one-hot representation of the residue,
-    and the hydrophobicity of the residue
-    '''
-    if include_onehot:
-        for code in protein_letters:
-            dataset[code]=[int(res==code) for res in dataset['RESNAME']]
-    dataset["HYDROPHOBICITY"]=[hydrophobic_dict[res] for res in dataset['RESNAME']]
-
-
-# Feature space lifting
-def Lift_Space(dataset,participating_cols,increased_dim,w,b):
-    if w is None:
-        w = np.random.normal(0, 0.1, (len(participating_cols), increased_dim))
-        b = np.random.uniform(0, 2*np.pi, increased_dim)
-    lifted_dat_mat=np.cos(dataset[participating_cols].values.dot(w)+b)
-    for n in range(increased_dim):
-        dataset["Lifted_%d"%n]=lifted_dat_mat[:,n]
 
 
 # read all files
@@ -120,6 +73,14 @@ try: # If DSSP columns are available, use them to filter a few bad residues base
     df_val = dssp_purifier(df_val)
 except KeyError:
     pass
+
+classification_model_path=configs.get("classification_model_path",None)
+if classification_model_path is not None:
+    from keras.models import load_model
+    model=load_model(classification_model_path)
+    Implant_classification(df_train,model)
+    Implant_classification(df_val,model)
+    Implant_classification(df_test,model)
 
 if configs["add_res_spec_feats"]:
     Add_res_spec_feats(df_train,include_onehot=configs.get("add_onehot_resname",False))
@@ -183,7 +144,7 @@ print("Number of testing residues:",len(df_test))
 if configs.get("fixed_val_test",False):
     val_eps,train_rmsd,val_rmsd,test_rmsd,mod= \
     train_val_test(df_train,df_val,df_test,configs["atom_list"],eval(configs["evaluation"]),eval(configs["model"]),configs["args"],configs["kwargs"],mod_type=configs["mod_type"])
-    with open('results.csv','a') as f:
+    with open('results.txt','a') as f:
         f.write(config_file.split("/")[-1].replace(".json","")+"\n")
         f.write("Epochs: %d\n Train_rmsd: %d\n Val_rmsd: %d\n Test_rmsd: %d\n\n"%(val_eps,train_rmsd,val_rmsd,test_rmsd))
     if "mod_saving_add" in configs:
@@ -202,7 +163,7 @@ else:
     print(train_rmsd_list)
     print(test_rmsd_list)
 
-    with open('results.csv','w') as f:
+    with open('results.txt','w') as f:
         csv_writer=csv.writer(f,'excel')
         for row in zip(list(epochs_list)*len(atom_list),train_rmsd_list,test_rmsd_list):
             csv_writer.writerow(row)
