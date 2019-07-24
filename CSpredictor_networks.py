@@ -1516,7 +1516,7 @@ def numerical_splitting_model(data, atom, arch, skip_connection=True, has_class=
     mod.compile(loss='mean_squared_error', optimizer=opt)
     try:    
         plot_model(mod,"model.png",show_shapes=True)
-    expect:
+    except:
         pass 
     if lsuv:
         mod = LSUVinit(mod, feat_train[:lsuv_batch])
