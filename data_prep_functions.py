@@ -273,10 +273,10 @@ def Implant_classification(dataset,model,half_window=20):
     input_cols=["RESNAME_i-%d"%n for n in range(half_window,0,-1)]+["RESNAME"]+["RESNAME_i+%d"%n for n in range(1,half_window+1)]
     input_classification=encode_onehot(dataset[input_cols].values)
     pred=model.predict(input_classification,verbose=1)
-    class_names=["CLASS_"+str(i+1) for i in range(pred.shape[1])]
+    class_names=["CLASS_"+str(i+1) for i in range(pred[0].shape[1])]
     for col in class_names:
         dataset[col]=0
-    dataset[class_names]=pred
+    dataset[class_names]=pred[0]
 
 
 # Define purifier functions

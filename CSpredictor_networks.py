@@ -760,7 +760,7 @@ def res_level_generator(data, atom, noise={}, noise_type='percent', noise_dist='
             yield these_feats.iloc[sel], these_shifts.iloc[sel]
 
 
-def data_prep(data, atom, reject_outliers=None, norm_shifts=True, norm_stats=None, split_numeric=False):
+def data_prep(data, atom, reject_outliers=None, norm_shifts=True, norm_stats=None, split_numeric=False, split_class=False):
     '''Function to prepare features and shifts from the given DataFrame to facilitate
     processing by the model-generating functions below.
     
@@ -771,6 +771,7 @@ def data_prep(data, atom, reject_outliers=None, norm_shifts=True, norm_stats=Non
         norm_shifts - Whether or not to normalize the target shifts (Bool)
         norm_stats - Statistics [mean, std] to use for normalizing shifts.  If norm_shifts==True and norm_stats==None, use stats from data (None or List) 
         split_numeric - If true, return two feature dataframes, one only containing numerical features and the other only containing non-numerical features
+        split_class - For numerical splitting model, split out the classes so that it can be put into the middle level of the network (only effective when split_numeric=True)
         
     returns:
         feats, shifts - Feature and shift data (Pandas DataFrames)
@@ -838,8 +839,14 @@ def data_prep(data, atom, reject_outliers=None, norm_shifts=True, norm_stats=Non
     
     if split_numeric:
         feats_non_numeric = feats[non_numerical_cols].values
-        feats_numeric=feats[[col for col in feats.columns if col not in non_numerical_cols]].values
-        feats=[feats_numeric,feats_non_numeric]
+        feats_numeric=feats[[col for col in feats.columns if col not in non_numerical_cols]]
+        if split_class:
+            class_cols=[col for col in feats_numeric.columns if "CLASS_" in col]
+            feats_class=feats[class_cols].values
+            feats_numeric=feats_numeric[[col for col in feats_numeric.columns if col not in class_cols]].values
+            feats=[feats_numeric,feats_non_numeric,feats_class]
+        else:
+            feats=[feats_numeric.values,feats_non_numeric]
     else:
         feats = feats.values
     
@@ -1377,7 +1384,7 @@ def outer_product(inputs):
     # returns a flattened batch-wise set of tensors
     return outerProduct
 
-def numerical_splitting_model(data, atom, arch, skip_connection=True, activ='prelu', lrate=0.001, mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None, early_stop=None, es_data=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0.0, clip_norm=0.0, reject_outliers=None, noise=None, noise_type='angle', noise_dist='uniform', batch_size=64, lsuv_batch=64):
+def numerical_splitting_model(data, atom, arch, skip_connection=True, has_class= False,class_bins=20, activ='prelu', lrate=0.001, mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None, early_stop=None, es_data=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0.0, clip_norm=0.0, reject_outliers=None, noise=None, noise_type='angle', noise_dist='uniform', batch_size=64, lsuv_batch=64):
     '''Constructs a model from the given features and shifts for the requested atom.  The model is trained for the given number of epochs with the loss being checked every per epochs.  Training stops when this loss increases by more than tol. The architecture is formed with the numerical network and non-numerical network doing an outer product at some level. More descriptions below.
     
     args:
@@ -1385,6 +1392,8 @@ def numerical_splitting_model(data, atom, arch, skip_connection=True, activ='pre
         atom - Name of atom to predict (Str)
         arch - List with structure [[num_neurons],[non-num_neurons],[neurons_after_outer_product]] (List)
         skip_connection - Whether set skip connections for numerical and non-numerical inputs and concatenate them with the outer product layer (Bool)
+        has_class - Whether class labels are contained in the features
+        class_bins - Number of bins for classifying the shifts into (in input) (int)
         activ - Activation function to use (Str - prelu, relu, tanh, etc.)
         lrate - Learning rate for SGD (Float)
         mom - Momentum for SGD (Float)
@@ -1418,11 +1427,14 @@ def numerical_splitting_model(data, atom, arch, skip_connection=True, activ='pre
         
     '''
 
-    feats, shifts, shifts_mean, shifts_std = data_prep(data, atom, reject_outliers=reject_outliers, norm_shifts=norm_shifts,split_numeric=True)
-    feats_numeric,feats_non_numeric=feats
+    feats, shifts, shifts_mean, shifts_std = data_prep(data, atom, reject_outliers=reject_outliers, norm_shifts=norm_shifts,split_numeric=True,split_class=True)
+    if has_class:
+        feats_numeric,feats_non_numeric,feats_class=feats
+    else:
+        feats_numeric,feats_non_numeric=feats
     # Split up the data into train and validation
-    seed = np.random.randint(1, 100)
-    feat_num_train, feat_num_val, feat_non_num_train, feat_non_num_val, shift_train, shift_val = skl.model_selection.train_test_split(feats_numeric,feats_non_numeric, shifts, test_size=0.2, random_state=seed)
+    
+    
     dim_num_in = feats_numeric.shape[1]
     dim_non_num_in = feats_non_numeric.shape[1]
     
@@ -1478,9 +1490,13 @@ def numerical_splitting_model(data, atom, arch, skip_connection=True, activ='pre
             layer_non_num=keras.layers.Dropout(do)(layer_non_num)
     
     layer=keras.layers.Lambda(outer_product, output_shape=(arch[0][-1]*arch[1][-1], ))([layer_num, layer_non_num])
+    concat_layer=[layer]
     if skip_connection:
-        layer=keras.layers.Concatenate()([layer,inp_num,inp_non_num])
-
+        concat_layer.extend([inp_num,inp_non_num])
+    if has_class:
+        inp_class=keras.layers.Input((class_bins,))
+        concat_layer.append(inp_class)
+    layer=keras.layers.Concatenate()(concat_layer)
     for node in arch[2]:
         if activ is 'prelu':
             layer=keras.layers.Dense(units=node, activation='linear',kernel_regularizer=regularizer)(layer)
@@ -1493,7 +1509,10 @@ def numerical_splitting_model(data, atom, arch, skip_connection=True, activ='pre
             layer=keras.layers.Dropout(do)(layer)
 
     output=keras.layers.Dense(units=1, activation='linear')(layer)
-    mod=keras.models.Model(input=[inp_num,inp_non_num],output=output)
+    inputs=[inp_num,inp_non_num]
+    if has_class:
+        inputs.append(inp_class)
+    mod=keras.models.Model(input=inputs,output=output)
     mod.compile(loss='mean_squared_error', optimizer=opt)
     plot_model(mod,"model.png",show_shapes=True)
     if lsuv:
@@ -1508,9 +1527,11 @@ def numerical_splitting_model(data, atom, arch, skip_connection=True, activ='pre
             val_epochs, hist_list, val_list, param_list = early_stopping(mod, early_stop, tol, per, epochs, min_epochs, batch_size, feat_train=None, shift_train=None, feat_val=feat_val, shift_val=shift_val, train_gen=train_gen, train_steps=train_steps, noise=noise)
         else:
             if es_data is None:
+                seed = np.random.randint(1, 100)
+                feat_num_train, feat_num_val, feat_non_num_train, feat_non_num_val, shift_train, shift_val = skl.model_selection.train_test_split(feats_numeric,feats_non_numeric, shifts, test_size=0.2, random_state=seed)
                 val_epochs, hist_list, val_list, param_list = early_stopping(mod, early_stop, tol, per, epochs, min_epochs, batch_size, feat_train=[feat_num_train,feat_non_num_train], shift_train=shift_train, feat_val=[feat_num_val,feat_non_num_val], shift_val=shift_val, train_gen=None, train_steps=None, noise=noise)
             else:
-                val_feats, val_shifts, _, _ = data_prep(es_data, atom, reject_outliers=None, norm_shifts=norm_shifts, norm_stats=[shifts_mean, shifts_std],split_numeric=True) #Prepare es_data using statistics from training set 
+                val_feats, val_shifts, _, _ = data_prep(es_data, atom, reject_outliers=None, norm_shifts=norm_shifts, norm_stats=[shifts_mean, shifts_std],split_numeric=True,split_class=has_class) #Prepare es_data using statistics from training set 
                 val_epochs, hist_list, val_list, param_list = early_stopping(mod, early_stop, tol, per, epochs, min_epochs, batch_size, feat_train=feats, shift_train=shifts, feat_val=val_feats, shift_val=val_shifts, train_gen=None, train_steps=None, noise=False)
     else:
         val_epochs = epochs
@@ -1529,7 +1550,7 @@ def numerical_splitting_model(data, atom, arch, skip_connection=True, activ='pre
             mod.fit(list(feats), shifts, batch_size=batch_size, epochs=val_epochs)
     else:
         data_all=pd.concat([data,es_data],ignore_index=True)
-        feats, shifts, shifts_mean, shifts_std = data_prep(data_all, atom, reject_outliers=reject_outliers, norm_shifts=norm_shifts,split_numeric=True)
+        feats, shifts, shifts_mean, shifts_std = data_prep(data_all, atom, reject_outliers=reject_outliers, norm_shifts=norm_shifts,split_numeric=True,split_class=has_class)
         mod.fit(feats,shifts, batch_size=batch_size, epochs=val_epochs)
     return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
 
@@ -3161,7 +3182,7 @@ def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=
     return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
     
 # Here, we build some evaluators to combine operations needed to get the rmsd of different types of models
-def fc_eval(data, model, atom, mean=0, std=1, reject_outliers=None, split_numeric=False):
+def fc_eval(data, model, atom, mean=0, std=1, reject_outliers=None, split_numeric=False, split_class=False):
     '''Function for evaluating the performance of fully connected and residual networks.
     
     mean = Mean to use for standardizing the targets in data (Float)
@@ -3170,6 +3191,8 @@ def fc_eval(data, model, atom, mean=0, std=1, reject_outliers=None, split_numeri
     model = Model to evaluate (Keras Model)
     atom = Atom for which the model predicts shifts (Str)
     reject_outliers = Shifts that differ from mean by more than this multiple of std are dropped before evaluation (Float or None)
+    split_numeric = If true, split the numeric columns in the dataset as separate input (bool)
+    split_class = If true, split the classification bins as separate input. Only effective when split_numeric=True (bool)
     '''
     
     dat = data[data[atom].notnull()]
@@ -3218,12 +3241,18 @@ def fc_eval(data, model, atom, mean=0, std=1, reject_outliers=None, split_numeri
         pass
     if split_numeric:
         feats_non_numeric = feats[non_numerical_cols].values
-        feats_numeric=feats[[col for col in feats.columns if col not in non_numerical_cols]].values
-        feats=[feats_numeric,feats_non_numeric]
+        feats_numeric=feats[[col for col in feats.columns if col not in non_numerical_cols]]
+        if split_class:
+            class_cols=[col for col in feats_numeric.columns if "CLASS_" in col]
+            feats_class=feats[class_cols].values
+            feats_numeric=feats_numeric[[col for col in feats_numeric.columns if col not in class_cols]].values
+            feats=[feats_numeric,feats_non_numeric,feats_class]
+        else:
+            feats=[feats_numeric.values,feats_non_numeric]
     else:
-        feats = feats.values    
-    shifts = dat[atom].values
-    shifts_norm = (shifts - mean) / std
+        feats=feats.values
+    shifts=dat[atom].values
+    shifts_norm=(shifts-mean)/std
     mod_eval = model.evaluate(feats, shifts_norm, verbose=0)
     return np.sqrt(mod_eval) * std
 
