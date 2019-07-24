@@ -1514,7 +1514,10 @@ def numerical_splitting_model(data, atom, arch, skip_connection=True, has_class=
         inputs.append(inp_class)
     mod=keras.models.Model(input=inputs,output=output)
     mod.compile(loss='mean_squared_error', optimizer=opt)
-    plot_model(mod,"model.png",show_shapes=True)
+    try:    
+        plot_model(mod,"model.png",show_shapes=True)
+    expect:
+        pass 
     if lsuv:
         mod = LSUVinit(mod, feat_train[:lsuv_batch])
         
