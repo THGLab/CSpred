@@ -419,7 +419,7 @@ def filter_data(data,filter_columns):
     data = Feature and target data (Pandas DataFrame)
     filter_columns = List of names of columns needed for filtering (List)
     '''
-    filtered=data
+    filtered=data.copy()
     for column in filter_columns:
         filtered=filtered[filtered[column].notnull()]
     return filtered
@@ -505,8 +505,9 @@ def decide_duplicate_weights(window,total_length,len_to_start):
     normalization=np.tile(np.max(num_duplicate,axis=1),(window,1)).T
     return normalization/num_duplicate
 
-def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), sample_weights=True, randomize=False, rolling=True, center_only=False, batch_size=32):
-    '''Takes full DataFrame of all train and validation chains
+def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), sample_weights=True, randomize=True, rolling=True, center_only=False, batch_size=32):
+    '''
+    Takes full DataFrame of all train and validation chains
     along with a list of index lists for the various chains to be batched
     and the window (length of sub-samples).
     
@@ -516,10 +517,8 @@ def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), sample_w
     window = Length of subsequences into which chains are to be chopped for batch training (Int)
     norm_shifts = Tuple with the first element being the mean for different shifts, and the second element
     being the standard deviation of the shifts (List of arrays)
-    sample_weights = Return sample weights of same shape as target array with entries of 1 for all
-                     timesteps (sequence entries) except 0's for timesteps with no shift data (NumpyArray)
-    randomize = Return batches with order of subsequences randomized - to test if state information 
-                between subsequences is being (usefully) implemented (Bool)
+    sample_weights = Return sample weights of same shape as target array with entries of 1 for all timesteps (sequence entries) except 0's for timesteps with no shift data (NumpyArray)
+    randomize = Return batches with order of subsequences randomized - to test if state information between subsequences is being (usefully) implemented (Bool)
     rolling = Use rolling windows as opposed to non-overlapping windows for subsequences (Bool)
     center_only = predict only the central residue for rolling windows (Bool)
     batch_size = size of pieces generated in each batch (Int)
@@ -578,15 +577,19 @@ def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), sample_w
                     batch_shifts[j,:,:]=shift_norm.loc[batch_piece_indices[j]].values
             batch_shifts=np.split(batch_shifts,num_shifts,axis=-1)
             if not sample_weights:
-                # print("from generator:",sum(batch_feats))
                 yield batch_feats, batch_shifts
             else:
                 information_array=np.array([piece_information[1] for piece_information in batch_pieces])
                 batch_weights=decide_duplicate_weights(window,information_array[:,1],information_array[:,0])
                 returned_sample_weights=[]
-                for atom_shifts in batch_shifts:
-                    is_valid=np.logical_not(np.isnan(atom_shifts).any(axis=2)) # Only valid for NOT center_only!!
-                    returned_sample_weights.append(is_valid*batch_weights)
+                if not center_only:
+                    for atom_shifts in batch_shifts:
+                        is_valid=np.logical_not(np.isnan(atom_shifts).any(axis=2)) # Only valid for NOT center_only!!
+                        returned_sample_weights.append(is_valid*batch_weights)
+                else:
+                    for atom_shifts in batch_shifts:
+                        is_valid=np.logical_not(np.isnan(atom_shifts))
+                        returned_sample_weights.append(is_valid)
                 yield batch_feats, [np.nan_to_num(batch_shift,0) for batch_shift in batch_shifts], returned_sample_weights
     # Does it make sense to generate zeros for these remaining pieces?
 
@@ -599,8 +602,12 @@ def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), sample_w
         for i in range(len(remaining_pieces)):
             piece_indices=[piece[0] for piece in remaining_pieces]
             batch_feats[i,:,:]=feats.loc[piece_indices[i]].values
-            batch_shifts[i,:,:]=shift_norm.loc[piece_indices[i]].values
-        batch_shifts=[batch_shifts[:,:,n].reshape((batch_size,window,1)) for n in range(num_shifts)]
+            if center_only:
+                batch_shifts[i,:]=shift_norm.loc[piece_indices[i][int((window-1)/2)]].values
+                batch_shifts=[batch_shifts[:,n].reshape((batch_size,1)) for n in range(num_shifts)]
+            else:
+                batch_shifts[i,:,:]=shift_norm.loc[piece_indices[i]].values
+                batch_shifts=[batch_shifts[:,:,n].reshape((batch_size,window,1)) for n in range(num_shifts)]
         if not sample_weights:
             yield batch_feats, batch_shifts
         else:
@@ -609,8 +616,12 @@ def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), sample_w
             batch_weights=np.vstack((batch_weights,np.zeros((batch_size-len(remaining_pieces),window))))
             returned_sample_weights=[]
             for atom_shifts in batch_shifts:
-                is_valid=np.logical_not(np.isnan(atom_shifts).any(axis=2))
-                returned_sample_weights.append(is_valid*batch_weights)
+                if center_only:
+                    is_valid=np.logical_not(np.isnan(atom_shifts))
+                    returned_sample_weights.append(is_valid)
+                else:
+                    is_valid=np.logical_not(np.isnan(atom_shifts).any(axis=2))
+                    returned_sample_weights.append(is_valid*batch_weights)
             yield batch_feats, [np.nan_to_num(batch_shift,0) for batch_shift in batch_shifts], returned_sample_weights
         if randomize:
             random.shuffle(all_pieces)
@@ -854,6 +865,94 @@ def data_prep(data, atom, reject_outliers=None, norm_shifts=True, norm_stats=Non
         return feats, shift_norm, rej_mean, rej_std
     else:
         return feats, shift_norm, shifts_mean, shifts_std
+
+def rnn_data_prep(data, atoms, window, batch_size=64,  norm_shifts=True, norm_stats=None,val_split=None):
+    '''Function to prepare features and shifts for the RNN model (timeseries of features)
+    
+    args:
+        data - DataFrame containing feature and target data (Pandas DataFrame)
+        atoms - List of all the atoms needed to be predicted (List)
+        window - Size of window for generating data (Odd int)
+        batch_size - Number of examples in each batch (int)
+        norm_shifts - Whether or not to normalize the target shifts (Bool)
+        norm_stats - Statistics [mean, std] to use for normalizing shifts.  If norm_shifts==True and norm_stats==None, use stats from data (None or List)
+        val_split - None, or a fraction of validation data 
+        
+    returns:
+        train_generators, shifts - Feature and shift data (generators)
+    '''
+    dat=data.copy()
+    drop_cols = ['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN','RESNAME_im1','RESNAME_ip1']
+    # Need to drop the random coil and ring current columns for the other atoms if 
+    # such columns are in the data.
+    try:
+        ring_col = [single_atom + '_RC' for single_atom in atoms]
+        rem1 = ring_cols.copy()
+        for column in ring_col:
+            rem1.remove(column)
+        dat.drop(rem1, axis=1, inplace=True)
+        dat[ring_col] = dat[ring_col].fillna(value=0)
+    except KeyError:
+        pass
+    except ValueError:
+        pass
+    try:
+        rcoil_col = ['RCOIL_' + single_atom for single_atom in atoms]
+        rem2 = rcoil_cols.copy()
+        for column in rcoil_col:
+            rem2.remove(column)
+        dat.drop(rem2, axis=1, inplace=True)
+    except KeyError:
+        pass
+    except ValueError:
+        pass
+    # Get shift statistics
+    if norm_shifts:
+        all_shifts = filter_data(dat,atoms)
+        all_shifts = all_shifts[atoms]
+        shifts_mean = all_shifts.mean(axis=0)
+        shifts_std = all_shifts.std(axis=0)
+    else:
+        if norm_stats is not None:
+            shifts_mean=norm_stats[0]
+            shifts_std=norm_stats[1]
+        else:
+            shifts_mean = 0
+            shifts_std = 1
+    # Split the data by chain according to whether we need to do train/test split
+    if val_split is None:
+        chains_set=sep_by_chains(dat, atom=atoms)
+    else:
+        train_set, val_set = sep_by_chains(dat, atom=atoms, split=val_split)
+        full_set = train_set + val_set
+    # Metadata has already been used (in sep_by_chains), so now can safely remove them from featues
+    for dcol in drop_cols:
+        try:
+            dat.drop(dcol, axis=1,inplace=True)
+        except KeyError:
+            pass
+        except ValueError:
+            pass
+    # Get total number of features
+    feats = dat.drop(atom_names, axis=1)
+    num_feats = feats.shape[1]
+    # Create generators 
+    if val_split is None:
+        data_gen = chain_batch_generator(dat,chains_set,atoms,window, norm_shifts=(shifts_mean, shifts_std),batch_size=batch_size,center_only=True)
+        steps=math.ceil(sum([len(chain)-window+1 for chain in chains_set if len(chain)>=window])/batch_size)
+    else:
+        train_gen = chain_batch_generator(dat, train_set, atoms, window,
+        norm_shifts=(shifts_mean, shifts_std), batch_size=batch_size,center_only=True)
+        val_gen = chain_batch_generator(dat, val_set, atoms, window, norm_shifts=(shifts_mean, shifts_std), 
+        batch_size=batch_size,center_only=True)
+        full_gen = chain_batch_generator(dat, full_set, atoms, window, norm_shifts=(shifts_mean, shifts_std),
+        batch_size=batch_size,center_only=True)
+        train_steps = math.ceil(sum([len(chain)-window+1 for chain in train_set if len(chain)>=window])/batch_size)
+        val_steps = math.ceil(sum([len(chain)-window+1 for chain in val_set if len(chain)>=window])/batch_size)
+        full_steps = train_steps+val_steps
+        data_gen=(train_gen,val_gen,full_gen)
+        steps=(train_steps,val_steps,full_steps)
+    return data_gen,steps,num_feats,shifts_mean,shifts_std
 
 
 
@@ -1205,8 +1304,8 @@ def early_stopping(mod, method, tol, per, epochs, min_epochs, batch_size, feat_t
             
             if method == 'GL':
                 param_list.append(gl)
-                if gl > tol:
-                    print('Broke loop at round ' + str(i))
+                if gl > tol and (i+1)*per>=min_epochs:
+                    print('Broke loop at round ' + str(i+1))
                     break
             
             if method == 'PQ':
@@ -1215,29 +1314,118 @@ def early_stopping(mod, method, tol, per, epochs, min_epochs, batch_size, feat_t
                 p = 1000 * (strip_avg / strip_min - 1)
                 pq = gl / p
                 param_list.append(pq)
-                if pq > tol:
-                    print('Broke loop at round ' + str(i))
+                if pq > tol and (i+1)*per>=min_epochs:
+                    print('Broke loop at round ' + str(i+1))
                     break
         
         if method == 'UP':
             if pt2 > pt1:
                 up_count += 1
                 param_list.append(up_count)
-                if up_count >= tol:
-                    print('Broke loop at round ' + str(i))
+                if up_count >= tol and (i+1)*per>=min_epochs:
+                    print('Broke loop at round ' + str(i+1))
                     break
             else:
                 up_count = 0
                 param_list.append(up_count)
         
-        print('The validation loss at round ' + str(i) + ' is ' + str(pt2))
+        print('The validation loss at round ' + str(i+1) + ' is ' + str(pt2))
 
-        min_val_idx = min((val, idx) for (idx, val) in enumerate(val_list))[1]
-        val_epochs = max(min_val_idx * per, min_epochs)
+    min_epochs_pos=max(int(min_epochs/per-1),0)  
+    val_list_after_min_epoch=val_list[min_epochs_pos:]    
+    min_val_idx=np.argmin(val_list_after_min_epoch)+min_epochs_pos
+    val_epochs=min_val_idx * per
     
     return val_epochs, hist_list, val_list, param_list
 
+def generator_early_stopping(mod, atoms, shifts_std, method, tol, per, epochs, min_epochs, batch_size, train_gen, train_steps, val_gen, val_steps):
+    '''Function to execute an early-stopping routine to determine the "optimal" number of epochs to train (for generator).
 
+     args:
+        mod - Model on which to run the early-stopping routine (Keras Model)
+        atoms - List of atoms the model is trained for (List)
+        shifts_std - Standard deviations of the original atom shifts (List or Pandas Dataframe)
+        method - Name of the method used for early stopping (Str - 'GL', 'PQ', or 'UP')
+        tol - Tolerance for the method (Float)
+        per - Number of epochs before each evaluation (Int)
+        epochs - Maximum number of epochs to train (Int)
+        min_epochs - Minimum number of epochs to train (Int)
+        batch_size - Size of batch for fitting (Int)
+        train_gen - Generator for training set (Generator)
+        train_steps - Steps per epoch for training generator (Int)
+        val_gen - Generator for validation set (Generator)
+        val_steps - Steps per epoch for validation generator (Int)
+        
+    returns:
+        val_epochs - The identified number of epochs obtained by minimizing the validation error (Int)
+        hist_list - List of the training history from the early-stopping routine (List)
+        val_list - List of the validation errors from the early-stopping routine (List)
+        param_list - List of the successive parameter values of the early-stopping metric (List)
+    '''
+    # Initialize some outputs
+    hist_list = []
+    val_list = []
+    param_list = []
+    
+    val_min = 10 ** 10
+    up_count = 0
+    pt1=val_min
+    for i in range(int(epochs/per)):
+        if pt1==val_min:
+            evaluate_result = mod.evaluate_generator(val_gen,steps=val_steps)
+            if type(evaluate_result) is np.float64:
+                evaluate_result=[evaluate_result,evaluate_result] 
+                pt1 = sum(evaluate_result)/2
+            val_list.append(pt1)
+        else:
+            pt1=pt2
+        if pt1 < val_min:
+            val_min = pt1
+        hist = mod.fit_generator(train_gen, steps_per_epoch=train_steps, epochs=per)
+        hist_list += hist.history['loss']
+        evaluate_result=mod.evaluate_generator(val_gen, steps=val_steps)
+        if type(evaluate_result) is np.float64:
+            evaluate_result=[evaluate_result,evaluate_result] 
+        pt2 = sum(evaluate_result)/2
+        val_list.append(pt2)
+        print('The validation loss at round ' + str(i+1) + ' is ' + str(pt2))
+        print([atom_type+":"+str(np.sqrt(atom_error)*atom_std) for atom_type,atom_error,atom_std in zip(atoms,evaluate_result[1:],shifts_std)])
+
+        if method == 'GL' or method == 'PQ':
+            gl = 100 * (pt2/val_min - 1)
+            
+            if method == 'GL':
+                param_list.append(gl)
+                if gl > tol and (i+1)*per>=min_epochs:
+                    print('Broke loop at round ' + str(i+1))
+                    break
+            
+            if method == 'PQ':
+                strip_avg = np.array(hist.history['loss']).mean()
+                strip_min = min(np.array(hist.history['loss']))
+                p = 1000 * (strip_avg / strip_min - 1)
+                pq = gl / p
+                param_list.append(pq)
+                if pq > tol and (i+1)*per>=min_epochs:
+                    print('Broke loop at round ' + str(i+1))
+                    break
+        
+        if method == 'UP':
+            if pt2 > pt1:
+                up_count += 1
+                param_list.append(up_count)
+                if up_count >= tol and (i+1)*per>=min_epochs:
+                    print('Broke loop at round ' + str(i+1))
+                    break
+            else:
+                up_count = 0
+                param_list.append(up_count)
+      
+    min_epochs_pos=max(int(min_epochs/per-1),0)  
+    val_list_after_min_epoch=val_list[min_epochs_pos:]    
+    min_val_idx=np.argmin(val_list_after_min_epoch)+min_epochs_pos
+    val_epochs=min_val_idx * per
+    return val_epochs, hist_list, val_list, param_list
 
 def fc_model(data, atom, arch, activ='prelu', lrate=0.001, mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None, early_stop=None, es_data=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0.0, clip_norm=0.0, reject_outliers=None, noise=None, noise_type='angle', noise_dist='uniform', batch_size=64, lsuv_batch=64):
     '''Constructs a model from the given features and shifts for the requested atom.  The model is trained for the given number of epochs with the loss being checked every per epochs.  Training stops when this loss increases by more than tol. The arch argument is a list specifying the number of hidden units at each layer.
@@ -2900,7 +3088,7 @@ def residual_model(data, atom, arch, activ='prelu', lrate=0.001, mom=0, dec=10**
 
 def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=0.001, mom=0, 
                     dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='adam', do=0, lstm_do=0.0, rec_do=0.0, reg=0.0,
-                    reg_type=None,constrain=None, early_stop=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, 
+                    reg_type=None,constrain=None, early_stop=None,es_data=None, bnorm=False, lsuv=False, nest=False, norm_shifts=True, 
                     opt_override=False, clip_val=0, clip_norm=0, val_split=0.2, window=5, rolling=True,
                     center_only=True, randomize=False,batch_size=32,sample_weights=True):
     '''Constructs a bidirectional recurrent net with LSTM cell.  Allows for deep bidirectional 
@@ -2929,6 +3117,7 @@ def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=
     do = Dropout percentage for LSTM cells, shared time distributed layers and shift heads (List of float)
     reg = Parameter for weight regularization (Float)
     early_stop = Whether or not and how to do early_stoping.  Accepts None, GL, PQ, or UP (Str) If early_stop=int, only do early_stop for such number without train on full data again
+    es_data = Dataframe for doing early-stopping, used for fixed train/val/test split
     bnorm = Use batch normalization (Bool)
     lsuv = Use layer-wise sequential unit variance initialization (Bool)
     nest = Use Nesterov momentum (Bool)
@@ -2945,98 +3134,12 @@ def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=
     num_shifts=len(atom)
     if not len(shift_heads) == num_shifts:
         raise RuntimeError("Number of shift heads and number of atom types for prediction don't match!")
-    dat=data.copy()
-    drop_cols = ['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN','RESNAME_im1','RESNAME_ip1']
-
-    all_columns=list(data.columns)
-    prev_res_columns=[column for column in all_columns if 'i-1' in column]
-    next_res_columns=[column for column in all_columns if 'i+1' in column]
-    blosum_columns=[column for column in all_columns if column[:6]=='BLOSUM']
-    drop_cols+=prev_res_columns+next_res_columns+blosum_columns
-
-    # Need to drop the random coil and ring current columns for the other atoms if 
-    # such columns are in the data.
-    try:
-        ring_col = [single_atom + '_RC' for single_atom in atom]
-        rem1 = ring_cols.copy()
-        for column in ring_col:
-            rem1.remove(column)
-        dat.drop(rem1, axis=1, inplace=True)
-        dat[ring_col] = dat[ring_col].fillna(value=0)
-    except KeyError:
-        pass
-    except ValueError:
-        pass
-    try:
-        rcoil_col = ['RCOIL_' + single_atom for single_atom in atom]
-        rem2 = rcoil_cols.copy()
-        for column in rcoil_col:
-            rem1.remove(column)
-        dat.drop(rem2, axis=1, inplace=True)
-    except KeyError:
-            pass
-    except ValueError:
-        pass
-
-    
-    # Get shift statistics
-
-    if norm_shifts:
-        all_shifts = filter_data(dat,atom)
-        all_shifts = all_shifts[atom]
-        shifts_mean = all_shifts.mean(axis=0)
-        shifts_std = all_shifts.std(axis=0)
-
-    # Split the data by chain and train/validation sets
-    train_set, val_set = sep_by_chains(dat, atom=atom, split=val_split)
-    full_set = train_set + val_set
-    # Metadata has already been used (in sep_by_chains), so now can safely remove them from featues
-    for dcol in drop_cols:
-        try:
-            dat.drop(dcol, axis=1,inplace=True)
-        except KeyError:
-            pass
-        except ValueError:
-            pass
-    # Get total number of features
-    feats = dat.drop(atom_names, axis=1)
-    num_feats = feats.shape[1]
-
     # Predicting only center residue requires odd window
     if rolling and center_only:
         if window % 2 is 0:
             window += 1
-    
-    # Create generators for training and validation data as well as full data
-    train_gen = chain_batch_generator(dat, train_set, atom, window,
-     norm_shifts=(shifts_mean, shifts_std), sample_weights=sample_weights, randomize=randomize,batch_size=batch_size)
-    val_gen = chain_batch_generator(dat, val_set, atom, window, norm_shifts=(shifts_mean, shifts_std), 
-    sample_weights=sample_weights, randomize=randomize,batch_size=batch_size)
-    full_gen = chain_batch_generator(dat, full_set, atom, window, norm_shifts=(shifts_mean, shifts_std),
-     sample_weights=sample_weights, randomize=randomize,batch_size=batch_size)
 
-
-    
-    # Count number of empty examples in train, val, and full sets
-    # train_count = 0
-    # val_count = 0
-    # for i, chain_idx in enumerate(train_set):
-    #     chain = data.loc[chain_idx]
-    #     weights = chain[atom].notnull()
-    #     weights *= 1
-    #     if np.array_equal(weights, np.zeros_like(weights)):
-    #         train_count += 1
-    # for i, chain_idx in enumerate(val_set):
-    #     chain = data.loc[chain_idx]
-    #     weights = chain[atom].notnull()
-    #     weights *= 1
-    #     if np.array_equal(weights, np.zeros_like(weights)):
-    #         val_count += 1
-    # full_count = train_count + val_count
-    
-    train_steps = math.ceil(sum([len(chain)-window+1 for chain in train_set if len(chain)>=window])/batch_size)
-    val_steps = math.ceil(sum([len(chain)-window+1 for chain in val_set if len(chain)>=window])/batch_size)
-    full_steps = train_steps+val_steps
+    data_gen,steps,num_feats,shifts_mean,shifts_std=rnn_data_prep(data,atom,window,batch_size,norm_shifts,val_split=val_split if es_data is None else None)
 
     # Define optimization procedure
     opt = make_optimizer(opt_type, lrate, mom, dec, nest, clip_norm=clip_norm, clip_val=clip_val, opt_override=opt_override)
@@ -3096,92 +3199,27 @@ def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=
 
 
     weights = mod.get_weights()
-    
-    # Initialize some outputs
-    hist_list = []
-    val_list = []
-    param_list = []
-    pt1=0
-    
-    # Do early_stoping to determine the best number of epochs for training
-    val_min = 10 ** 10
-    up_count = 0
-    retrain=not type(early_stop) is int
-
     if early_stop is not None:
-        for i in range(int(epochs/per)):
-            if pt1==0:
-                try:
-                    evaluate_result=mod.evaluate_generator(val_gen, steps=val_steps)
-                    if type(evaluate_result) is np.float64:
-                        evaluate_result=[evaluate_result,evaluate_result] 
-                    pt1 = sum(evaluate_result)/2
-                except:
-                    print("Failed on first call of evaluation, retrying...")
-                    pt1 = sum(mod.evaluate_generator(val_gen, steps=val_steps))/2
-            else:
-                pt1=pt2
-    
-            if pt1 < val_min:
-                val_min = pt1
-    
-            hist = mod.fit_generator(train_gen, steps_per_epoch=train_steps, epochs=per)
-            hist_list += hist.history['loss']
-            evaluate_result=mod.evaluate_generator(val_gen, steps=val_steps)
-            if type(evaluate_result) is np.float64:
-                evaluate_result=[evaluate_result,evaluate_result] 
-            pt2 = sum(evaluate_result)/2
-            val_list.append(pt2)
-
-
-            print('The validation loss at round ' + str(i+1) + ' is ' + str(pt2))
-            print([atom_type+":"+str(np.sqrt(atom_error)*atom_std) for atom_type,atom_error,atom_std in zip(atom,evaluate_result[1:],shifts_std)])
-
-            if early_stop == 'GL' or early_stop == 'PQ':
-                gl = 100 * (pt2/val_min - 1)
-                
-                if early_stop == 'GL':
-                    param_list.append(gl)
-                    if gl > tol and (i+1)*per>=min_epochs:
-                        print('Broke loop at round ' + str(i+1))
-                        break
-                
-                if early_stop == 'PQ':
-                    strip_avg = np.array(hist.history['loss']).mean()
-                    strip_min = min(np.array(hist.history['loss']))
-                    p = 1000 * (strip_avg / strip_min - 1)
-                    pq = gl / p
-                    param_list.append(pq)
-                    if pq > tol and (i+1)*per>=min_epochs:
-                        print('Broke loop at round ' + str(i+1))
-                        break
-            
-            if early_stop == 'UP':
-                if pt2 > pt1:
-                    up_count += 1
-                    param_list.append(up_count)
-                    if up_count >= tol and (i+1)*per>=min_epochs:
-                        print('Broke loop at round ' + str(i+1))
-                        break
-                else:
-                    up_count = 0
-                    param_list.append(up_count)
-
-        if not retrain:
-            val_epochs=epochs       
-        else:        
-            min_epochs_pos=max(int(min_epochs/per-1),0)  
-            val_list_after_min_epoch=val_list[min_epochs_pos:]    
-            min_val_idx=np.argmin(val_list_after_min_epoch)+min_epochs_pos+1
-            #min_val_idx = min((val, idx) for (idx, val) in enumerate(val_list))[1]+1
-            #val_epochs = max(min_val_idx * per, min_epochs)
-            val_epochs=min_val_idx * per
+        if es_data is None:
+            train_gen,val_gen,full_gen=data_gen
+            train_steps,val_steps,full_steps=steps
+            val_epochs, hist_list, val_list, param_list=generator_early_stopping(mod,atom,shifts_std,early_stop,tol,per,epochs,min_epochs,batch_size,train_gen,train_steps,val_gen,val_steps)
+        else:
+            val_gen,val_steps,_,_,_=rnn_data_prep(es_data,atom,window,batch_size,norm_stats=(shifts_mean,shifts_std))
+            val_epochs, hist_list, val_list, param_list=generator_early_stopping(mod,atom,shifts_std,early_stop,tol,per,epochs,min_epochs,batch_size,data_gen,steps,val_gen,val_steps)
     else:
         val_epochs = epochs
+        val_list = []
+        hist_list = []
+        param_list = []
 
     if retrain:
         mod.set_weights(weights)
-        mod.fit_generator(full_gen, steps_per_epoch=full_steps, epochs=val_epochs,use_multiprocessing=MULTI_PROCESSING,workers=1)
+        if es_data is None:
+            mod.fit_generator(full_gen, steps_per_epoch=full_steps, epochs=val_epochs,use_multiprocessing=MULTI_PROCESSING,workers=1)
+        else:
+            data_all=pd.concat([data,es_data],ignore_index=True)
+            data_gen,steps,num_feats,shifts_mean,shifts_std = rnn_data_prep(data_all, atom,window,batch_size,norm_shifts)
     return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
     
 # Here, we build some evaluators to combine operations needed to get the rmsd of different types of models
@@ -3685,7 +3723,7 @@ def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, per=5, out
     if out=='full':
         return epochs_list, train_rmsd_list, test_rmsd_list
 
-def train_val_test(train_data, val_data, test_data, atom, feval, model, mod_args, mod_kwargs, per=5, out='summary', mod_type='fc'):
+def train_val_test(train_data, val_data, test_data, atom, feval, model, mod_args, mod_kwargs, per=5, out='summary', mod_type='fc',window=7):
     '''
     Function for training a model with specified training data and validation data, and evaluate the performance for the trained model on the testing data
     '''
@@ -3723,6 +3761,38 @@ def train_val_test(train_data, val_data, test_data, atom, feval, model, mod_args
         print("Training error:",train_rmsd)
         print("Validation error:",val_rmsd)
         print("Testing error:",test_rmsd)
+    elif mod_type=="rnn":
+        train_dat=train_data.copy()
+        val_dat=val_data.copy()
+        if mod_kwargs['early_stop'] is None:
+            val_eps = mod_kwargs['epochs']
+        mod_kwargs['per']=per
+        if window is not None:
+            mod_kwargs["window"]=window
+        mean, std, val_list, history, param_list, mod = model(train_dat, atom, *mod_args,es_data=val_dat, **mod_kwargs)
+        val_arr = np.array(val_list)
+        if len(val_arr)==0:
+            val_arr=[0] 
+        val_rmsd=np.sqrt(np.min(val_arr))*std
+        try: 
+            val_eps = per * (np.argmin(val_arr) + 1)
+        except ValueError:
+            val_eps = 0
+        center_only=mod_kwargs.get("center_only",True)
+        print("Analyzing testing error...")
+        test_rmsd,test_corr = feval(test_data, mod, atom, mean=mean, std=std, window=window,center_only=center_only,save_prefix="test_")
+        print("Analyzing training error...")
+        train_rmsd,train_corr = feval(pd.concat([train_data,val_data]), mod, atom, mean=mean, std=std, window=window,center_only=center_only,save_prefix="train_")
+
+        print('Results:\n epochs:' + str(val_eps))
+        print("Training error:")
+        print(["%s:%f"%(shift_type,error) for shift_type,error in zip(atom,train_rmsd)] )
+        print("Training correlation:")
+        print(["%s:%f"%(shift_type,corr) for shift_type,corr in zip(atom,train_corr)] )
+        print("Testing error:")
+        print(["%s:%f"%(shift_type,error) for shift_type,error in zip(atom,test_rmsd)] )
+        print("Testing correlation:")
+        print(["%s:%f"%(shift_type,corr) for shift_type,corr in zip(atom,test_corr)] )
     return val_eps,train_rmsd,val_rmsd,test_rmsd,mod
 
 
@@ -3904,4 +3974,4 @@ def varimportance_shuffler(feats, data, feval, mean, std, mod, atom):
     for feat in feats:
         data[feat] = np.random.permutation(data[feat])
     err = feval(mean, std, data, mod, atom)
-    return err
+    return err          
