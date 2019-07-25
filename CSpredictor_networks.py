@@ -3713,8 +3713,10 @@ def train_val_test(train_data, val_data, test_data, atom, feval, model, mod_args
             rej_out = mod_kwargs['reject_outliers']
         except KeyError:
             rej_out = None
-        test_rmsd = feval(test_data, mod, atom, mean=mean, std=std, reject_outliers=rej_out,split_numeric=split_numeric,has_class=has_class)
-        train_rmsd = feval(pd.concat([train_data,val_data]), mod, atom, mean=mean, std=std, reject_outliers=rej_out,split_numeric=split_numeric,has_class=has_class)
+        test_rmsd = feval(test_data, mod, atom, mean=mean, std=std, reject_outliers=rej_out,split_numeric=split_numeric,split_class=has_class)
+        train_rmsd = feval(pd.concat([train_data,val_data]), mod, atom, mean=mean, std=std, reject_outliers=rej_out,split_numeric=split_numeric,split_class=has_class)
+        if len(val_arr)==0:
+            val_arr=[0] 
         val_rmsd=np.sqrt(np.min(val_arr))*std
         print('Results this round for atom ' + str(atom) + ':')
         print("Training epochs:",val_eps)
