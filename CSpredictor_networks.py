@@ -589,7 +589,7 @@ def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), sample_w
                 else:
                     for atom_shifts in batch_shifts:
                         is_valid=np.logical_not(np.isnan(atom_shifts))
-                        returned_sample_weights.append(is_valid)
+                        returned_sample_weights.append(is_valid.flatten())
                 yield batch_feats, [np.nan_to_num(batch_shift,0) for batch_shift in batch_shifts], returned_sample_weights
     # Does it make sense to generate zeros for these remaining pieces?
 
@@ -604,10 +604,9 @@ def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), sample_w
             batch_feats[i,:,:]=feats.loc[piece_indices[i]].values
             if center_only:
                 batch_shifts[i,:]=shift_norm.loc[piece_indices[i][int((window-1)/2)]].values
-                batch_shifts=[batch_shifts[:,n].reshape((batch_size,1)) for n in range(num_shifts)]
             else:
                 batch_shifts[i,:,:]=shift_norm.loc[piece_indices[i]].values
-                batch_shifts=[batch_shifts[:,:,n].reshape((batch_size,window,1)) for n in range(num_shifts)]
+        batch_shifts=np.split(batch_shifts,num_shifts,axis=-1)
         if not sample_weights:
             yield batch_feats, batch_shifts
         else:
@@ -618,7 +617,7 @@ def chain_batch_generator(data, idxs, atom, window, norm_shifts=(0, 1), sample_w
             for atom_shifts in batch_shifts:
                 if center_only:
                     is_valid=np.logical_not(np.isnan(atom_shifts))
-                    returned_sample_weights.append(is_valid)
+                    returned_sample_weights.append(is_valid.flatten())
                 else:
                     is_valid=np.logical_not(np.isnan(atom_shifts).any(axis=2))
                     returned_sample_weights.append(is_valid*batch_weights)
@@ -882,7 +881,6 @@ def rnn_data_prep(data, atoms, window, batch_size=64,  norm_shifts=True, norm_st
         train_generators, shifts - Feature and shift data (generators)
     '''
     dat=data.copy()
-    drop_cols = ['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN','RESNAME_im1','RESNAME_ip1']
     # Need to drop the random coil and ring current columns for the other atoms if 
     # such columns are in the data.
     try:
@@ -926,7 +924,7 @@ def rnn_data_prep(data, atoms, window, batch_size=64,  norm_shifts=True, norm_st
         train_set, val_set = sep_by_chains(dat, atom=atoms, split=val_split)
         full_set = train_set + val_set
     # Metadata has already been used (in sep_by_chains), so now can safely remove them from featues
-    for dcol in drop_cols:
+    for dcol in cols_to_drop:
         try:
             dat.drop(dcol, axis=1,inplace=True)
         except KeyError:
@@ -3161,39 +3159,78 @@ def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=
              kernel_regularizer=regularizer,kernel_constraint=constrain))(layers)
         if do:
             layers = keras.layers.TimeDistributed(keras.layers.Dropout(do))(layers)
-    for num_nodes in shared_arch[1]:
+    for num_nodes in shared_arch[1][:-1]:
         layers = keras.layers.Bidirectional(keras.layers.LSTM(num_nodes, dropout=lstm_do, recurrent_dropout=rec_do, kernel_regularizer=regularizer,
          kernel_initializer='random_uniform',bias_initializer='zeros',kernel_constraint=constrain,return_sequences=True))(layers)
         if do:
-            layers = keras.layers.TimeDistributed(keras.layers.Dropout(do))(layers)
-    for num_nodes in shared_arch[2:]:
-        if activ is 'prelu':
-            layers = keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation='linear',
-            kernel_initializer='random_uniform',bias_initializer='zeros',kernel_regularizer=regularizer,kernel_constraint=constrain))(layers)
-            layers = keras.layers.TimeDistributed(keras.layers.advanced_activations.PReLU())(layers)
-        else:
-            layers = keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation=activ,
-             kernel_regularizer=regularizer,kernel_constraint=constrain))(layers)
-        if do:
-            layers = keras.layers.TimeDistributed(keras.layers.Dropout(do))(layers)
-    head_layers=[]
-    for head in shift_heads:
-        new_layers=layers
-        for num_nodes in head:
-            if activ is 'prelu':
-                new_layers = keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation='linear',
-                kernel_regularizer=regularizer,kernel_constraint=constrain))(new_layers)
-                new_layers = keras.layers.TimeDistributed(keras.layers.advanced_activations.PReLU())(new_layers)
+            if not center_only:
+                layers = keras.layers.TimeDistributed(keras.layers.Dropout(do))(layers)
             else:
-                new_layers = keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation=activ,
-                kernel_regularizer=regularizer,kernel_constraint=constrain))(new_layers)
+                layers = keras.layers.Dropout(do)(layers)
+    for num_nodes in shared_arch[1][-1:]:
+        layers = keras.layers.Bidirectional(keras.layers.LSTM(num_nodes, dropout=lstm_do, recurrent_dropout=rec_do, kernel_regularizer=regularizer,
+         kernel_initializer='random_uniform',bias_initializer='zeros',kernel_constraint=constrain,return_sequences=not center_only))(layers)
+        if do:
+            if not center_only:
+                layers = keras.layers.TimeDistributed(keras.layers.Dropout(do))(layers)
+            else:
+                layers = keras.layers.Dropout(do)(layers)
+    if not center_only:
+        for num_nodes in shared_arch[2:]:
+            if activ is 'prelu':
+                layers = keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation='linear',
+                kernel_initializer='random_uniform',bias_initializer='zeros',kernel_regularizer=regularizer,kernel_constraint=constrain))(layers)
+                layers = keras.layers.TimeDistributed(keras.layers.advanced_activations.PReLU())(layers)
+            else:
+                layers = keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation=activ,
+                kernel_regularizer=regularizer,kernel_constraint=constrain))(layers)
             if do:
-                new_layers = keras.layers.TimeDistributed(keras.layers.Dropout(do))(new_layers)
-        new_layers=keras.layers.TimeDistributed(keras.layers.Dense(1, activation='linear', 
-            kernel_regularizer=regularizer,kernel_constraint=constrain))(new_layers)
-        head_layers.append(new_layers)
+                layers = keras.layers.TimeDistributed(keras.layers.Dropout(do))(layers)
+        head_layers=[]
+        for head in shift_heads:
+            new_layers=layers
+            for num_nodes in head:
+                if activ is 'prelu':
+                    new_layers = keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation='linear',
+                    kernel_regularizer=regularizer,kernel_constraint=constrain))(new_layers)
+                    new_layers = keras.layers.TimeDistributed(keras.layers.advanced_activations.PReLU())(new_layers)
+                else:
+                    new_layers = keras.layers.TimeDistributed(keras.layers.Dense(units=num_nodes, activation=activ,
+                    kernel_regularizer=regularizer,kernel_constraint=constrain))(new_layers)
+                if do:
+                    new_layers = keras.layers.TimeDistributed(keras.layers.Dropout(do))(new_layers)
+            new_layers=keras.layers.TimeDistributed(keras.layers.Dense(1, activation='linear', 
+                kernel_regularizer=regularizer,kernel_constraint=constrain))(new_layers)
+            head_layers.append(new_layers)
+    else:
+        for num_nodes in shared_arch[2:]:
+            if activ is 'prelu':
+                layers = keras.layers.Dense(units=num_nodes, activation='linear',
+                kernel_initializer='random_uniform',bias_initializer='zeros',kernel_regularizer=regularizer,kernel_constraint=constrain)(layers)
+                layers = keras.layers.advanced_activations.PReLU()(layers)
+            else:
+                layers = keras.layers.Dense(units=num_nodes, activation=activ,
+                kernel_regularizer=regularizer,kernel_constraint=constrain)(layers)
+            if do:
+                layers = keras.layers.Dropout(do)(layers)
+        head_layers=[]
+        for head in shift_heads:
+            new_layers=layers
+            for num_nodes in head:
+                if activ is 'prelu':
+                    new_layers = keras.layers.Dense(units=num_nodes, activation='linear',
+                    kernel_regularizer=regularizer,kernel_constraint=constrain)(new_layers)
+                    new_layers = keras.layers.advanced_activations.PReLU()(new_layers)
+                else:
+                    new_layers = keras.layers.Dense(units=num_nodes, activation=activ,
+                    kernel_regularizer=regularizer,kernel_constraint=constrain)(new_layers)
+                if do:
+                    new_layers = keras.layers.Dropout(do)(new_layers)
+            new_layers=keras.layers.Dense(1, activation='linear', 
+                kernel_regularizer=regularizer,kernel_constraint=constrain)(new_layers)
+            head_layers.append(new_layers)
     mod=keras.models.Model(inputs=input_layer,outputs=head_layers)
-    mod.compile(loss='mse', optimizer=opt, sample_weight_mode='temporal')
+    mod.compile(loss='mse', optimizer=opt, sample_weight_mode=None if center_only else 'temporal')
     print(mod.summary())
     # print(mod.metrics_names)
 
