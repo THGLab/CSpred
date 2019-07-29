@@ -21,7 +21,7 @@ else:
     config_file=sys.argv[1]
 with open(config_file) as f:
     configs=json.load(f)
-os.environ["KERAS_BACKEND"]=configs.get("keras_backend","cntk")
+os.environ["KERAS_BACKEND"]=configs.get("keras_backend","tensorflow")
 from CSpredictor_networks import *
 from data_prep_functions import *
 from Bio.SeqUtils import IUPACData
@@ -143,10 +143,10 @@ print("Number of testing residues:",len(df_test))
 
 if configs.get("fixed_val_test",False):
     val_eps,train_rmsd,val_rmsd,test_rmsd,mod= \
-    train_val_test(df_train,df_val,df_test,configs["atom_list"],eval(configs["evaluation"]),eval(configs["model"]),configs["args"],configs["kwargs"],mod_type=configs["mod_type"])
+    train_val_test(df_train,df_val,df_test,configs["atom_list"],eval(configs["evaluation"]),eval(configs["model"]),configs["args"],configs["kwargs"],mod_type=configs["mod_type"],per=configs.get("per",5),window=configs.get("window",7))
     with open('results.txt','a') as f:
         f.write(config_file.split("/")[-1].replace(".json","")+"\n")
-        f.write("Epochs: %d\n Train_rmsd: %d\n Val_rmsd: %d\n Test_rmsd: %d\n\n"%(val_eps,train_rmsd,val_rmsd,test_rmsd))
+        f.write("Epochs: %d\n Train_rmsd: %s\n Val_rmsd: %s\n Test_rmsd: %s\n\n"%(val_eps,str(train_rmsd),str(val_rmsd),str(test_rmsd)))
     if "mod_saving_add" in configs:
         mod_saving_add=configs["mod_saving_add"]
     else:
