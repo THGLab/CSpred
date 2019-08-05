@@ -93,12 +93,14 @@ def fetch_seq(pdb_id,chain_id=None):
     else:
         return seq
 
-def decode_seq(seq,supplementary_dict=None):
+def decode_seq(seq,supplementary_dict={}):
     seq=seq.upper()
     if len(seq)==1:
         if supplementary_dict is not None and seq in supplementary_dict:
             return supplementary_dict[seq]
         return protein_dict_reverse[seq]
+    for r in protein_dict_reverse:
+        supplementary_dict[r]=None
     return [protein_dict_reverse.get(r,supplementary_dict[r]) for r in seq]
 
 def form_seq(arr):

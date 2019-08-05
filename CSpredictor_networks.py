@@ -21,8 +21,12 @@ from Bio.SeqUtils import IUPACData
 from keras.utils import plot_model
 from keras import backend as K
 from numpy import newaxis
+<<<<<<< HEAD
 USE_MULTIPROCESSING=True
 VERBOSITY=2
+=======
+MULTI_PROCESSING=True
+>>>>>>> dec4914f02766a99f82269af44f857fc503390fa
 #from chemshift_prediction.lsuv_init import LSUVinit
 
 # The functions in this file are intended for use with specific data.
@@ -1371,7 +1375,11 @@ def generator_early_stopping(mod, atoms, shifts_std, method, tol, per, epochs, m
     pt1=val_min
     for i in range(int(epochs/per)):
         if pt1==val_min:
+<<<<<<< HEAD
             evaluate_result = mod.evaluate_generator(val_gen,steps=val_steps,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
+=======
+            evaluate_result = mod.evaluate_generator(val_gen,steps=val_steps,use_multiprocessing=MULTI_PROCESSING)
+>>>>>>> dec4914f02766a99f82269af44f857fc503390fa
             if type(evaluate_result) is np.float64:
                 evaluate_result=[evaluate_result,evaluate_result] 
                 pt1 = sum(evaluate_result)/2
@@ -1380,9 +1388,15 @@ def generator_early_stopping(mod, atoms, shifts_std, method, tol, per, epochs, m
             pt1=pt2
         if pt1 < val_min:
             val_min = pt1
+<<<<<<< HEAD
         hist = mod.fit_generator(train_gen, steps_per_epoch=train_steps, epochs=per,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
         hist_list += hist.history['loss']
         evaluate_result=mod.evaluate_generator(val_gen, steps=val_steps,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
+=======
+        hist = mod.fit_generator(train_gen, steps_per_epoch=train_steps, epochs=per,use_multiprocessing=MULTI_PROCESSING)
+        hist_list += hist.history['loss']
+        evaluate_result=mod.evaluate_generator(val_gen, steps=val_steps,use_multiprocessing=MULTI_PROCESSING)
+>>>>>>> dec4914f02766a99f82269af44f857fc503390fa
         if type(evaluate_result) is np.float64:
             evaluate_result=[evaluate_result,evaluate_result] 
         pt2 = sum(evaluate_result)/2
@@ -3250,7 +3264,7 @@ def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=
         val_list = []
         hist_list = []
         param_list = []
-
+        retrain=True
     if retrain:
         mod.set_weights(weights)
         if es_data is None:
@@ -3258,7 +3272,11 @@ def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=
         else:
             data_all=pd.concat([data,es_data],ignore_index=True)
             data_gen,steps,num_feats,shifts_mean,shifts_std = rnn_data_prep(data_all, atom,window,batch_size,norm_shifts)
+<<<<<<< HEAD
             mod.fit_generator(full_gen, steps_per_epoch=steps, epochs=val_epochs,verbose=VERBOSITY,use_multiprocessing=USE_MULTIPROCESSING,workers=1)
+=======
+            mod.fit_generator(data_gen, steps_per_epoch=steps, epochs=val_epochs,use_multiprocessing=MULTI_PROCESSING,workers=1) 
+>>>>>>> dec4914f02766a99f82269af44f857fc503390fa
     return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
     
 # Here, we build some evaluators to combine operations needed to get the rmsd of different types of models
