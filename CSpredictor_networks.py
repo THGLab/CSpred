@@ -21,7 +21,8 @@ from Bio.SeqUtils import IUPACData
 from keras.utils import plot_model
 from keras import backend as K
 from numpy import newaxis
-MULTI_PROCESSING=False
+USE_MULTIPROCESSING=True
+VERBOSITY=2
 #from chemshift_prediction.lsuv_init import LSUVinit
 
 # The functions in this file are intended for use with specific data.
@@ -1370,7 +1371,7 @@ def generator_early_stopping(mod, atoms, shifts_std, method, tol, per, epochs, m
     pt1=val_min
     for i in range(int(epochs/per)):
         if pt1==val_min:
-            evaluate_result = mod.evaluate_generator(val_gen,steps=val_steps)
+            evaluate_result = mod.evaluate_generator(val_gen,steps=val_steps,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
             if type(evaluate_result) is np.float64:
                 evaluate_result=[evaluate_result,evaluate_result] 
                 pt1 = sum(evaluate_result)/2
@@ -1379,9 +1380,9 @@ def generator_early_stopping(mod, atoms, shifts_std, method, tol, per, epochs, m
             pt1=pt2
         if pt1 < val_min:
             val_min = pt1
-        hist = mod.fit_generator(train_gen, steps_per_epoch=train_steps, epochs=per)
+        hist = mod.fit_generator(train_gen, steps_per_epoch=train_steps, epochs=per,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
         hist_list += hist.history['loss']
-        evaluate_result=mod.evaluate_generator(val_gen, steps=val_steps)
+        evaluate_result=mod.evaluate_generator(val_gen, steps=val_steps,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
         if type(evaluate_result) is np.float64:
             evaluate_result=[evaluate_result,evaluate_result] 
         pt2 = sum(evaluate_result)/2
@@ -3253,10 +3254,11 @@ def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=
     if retrain:
         mod.set_weights(weights)
         if es_data is None:
-            mod.fit_generator(full_gen, steps_per_epoch=full_steps, epochs=val_epochs,use_multiprocessing=MULTI_PROCESSING,workers=1)
+            mod.fit_generator(full_gen, steps_per_epoch=full_steps, epochs=val_epochs,verbose=VERBOSITY0,use_multiprocessing=USE_MULTIPROCESSING,workers=1)
         else:
             data_all=pd.concat([data,es_data],ignore_index=True)
             data_gen,steps,num_feats,shifts_mean,shifts_std = rnn_data_prep(data_all, atom,window,batch_size,norm_shifts)
+            mod.fit_generator(full_gen, steps_per_epoch=steps, epochs=val_epochs,verbose=VERBOSITY,use_multiprocessing=USE_MULTIPROCESSING,workers=1)
     return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
     
 # Here, we build some evaluators to combine operations needed to get the rmsd of different types of models
