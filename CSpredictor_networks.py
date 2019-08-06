@@ -3258,7 +3258,7 @@ def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=
         else:
             data_all=pd.concat([data,es_data],ignore_index=True)
             data_gen,steps,num_feats,shifts_mean,shifts_std = rnn_data_prep(data_all, atom,window,batch_size,norm_shifts)
-            mod.fit_generator(full_gen, steps_per_epoch=steps, epochs=val_epochs,verbose=VERBOSITY,use_multiprocessing=USE_MULTIPROCESSING,workers=1)
+            mod.fit_generator(data_gen, steps_per_epoch=steps, epochs=val_epochs,verbose=VERBOSITY,use_multiprocessing=USE_MULTIPROCESSING,workers=1)
     return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
     
 # Here, we build some evaluators to combine operations needed to get the rmsd of different types of models
@@ -3442,13 +3442,6 @@ def rnn_eval(data, model, atom, mean=0, std=1, window=5, rolling=True, center_on
     '''
     num_shifts=len(atom)
     dat=data.copy()
-    drop_cols = ['Unnamed: 0', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM', 'CHAIN','RESNAME_im1','RESNAME_ip1']
-
-    all_columns=list(data.columns)
-    prev_res_columns=[column for column in all_columns if 'i-1' in column]
-    next_res_columns=[column for column in all_columns if 'i+1' in column]
-    blosum_columns=[column for column in all_columns if column[:6]=='BLOSUM']
-    drop_cols+=prev_res_columns+next_res_columns+blosum_columns
 
     # Need to drop the random coil and ring current columns for the other atoms if 
     # such columns are in the data.
@@ -3475,7 +3468,7 @@ def rnn_eval(data, model, atom, mean=0, std=1, window=5, rolling=True, center_on
         pass
 
     idxs = sep_by_chains(dat, atom)
-    for dcol in drop_cols:
+    for dcol in cols_to_drop:
         try:
             dat.drop(dcol, axis=1,inplace=True)
         except KeyError:
@@ -3494,28 +3487,39 @@ def rnn_eval(data, model, atom, mean=0, std=1, window=5, rolling=True, center_on
                 dist_to_start=i
                 all_pieces.append(chain[i:i+window])
     feats=dat.drop(atom_names,axis=1)
-    # Record all prediction results into dictionary
-    predictions=[dict() for atom_ in atom]
-    inputs=np.array([feats.loc[piece].values for piece in all_pieces])
-    outputs=model.predict(inputs)
-    # Keep consistency for single/multiple atom predictions
-    if type(outputs) is not list:
-        outputs=[outputs]
+    if center_only:
+        inputs=np.array([feats.loc[piece].values for piece in all_pieces])
+        predictions=model.predict(inputs)
+        if type(predictions) is not list:
+            predictions=[predictions]
+        analysis={"%s_%s"%(a,b):[] for a in atom for b in ["pred","real"]}
+        for i in range(len(predictions[0])):
+            for atom_idx,atom_ in enumerate(atom):
+                analysis[atom_+"_pred"].append(predictions[atom_idx][i][0])
+                analysis[atom_+"_real"].append(dat.loc[all_pieces[i][int((window-1)/2)]][atom_])
+    else:
+        # Record all prediction results into dictionary
+        predictions=[dict() for atom_ in atom]
+        inputs=np.array([feats.loc[piece].values for piece in all_pieces])
+        outputs=model.predict(inputs)
+        # Keep consistency for single/multiple atom predictions
+        if type(outputs) is not list:
+            outputs=[outputs]
 
-    for atom_idx,result in enumerate(outputs):
-        for piece,atom_pred in zip(all_pieces,outputs[atom_idx]):
-            for line,shift in zip(piece,atom_pred):
-                if line in predictions[atom_idx]:
-                    predictions[atom_idx][line].append(shift[0])
-                else:
-                    predictions[atom_idx][line]=[shift[0]]
-    # Calculate average predictions, and get real values
-    analysis={"%s_%s"%(a,b):[] for a in atom for b in ["pred","real","pred_std"]}
-    for i in predictions[0]:
-        for atom_idx,atom_ in enumerate(atom):
-            analysis[atom_+"_pred"].append(np.average(predictions[atom_idx][i]))
-            analysis[atom_+"_pred_std"].append(np.std(predictions[atom_idx][i]))
-            analysis[atom_+"_real"].append(dat.loc[i][atom_])
+        for atom_idx,result in enumerate(outputs):
+            for piece,atom_pred in zip(all_pieces,outputs[atom_idx]):
+                for line,shift in zip(piece,atom_pred):
+                    if line in predictions[atom_idx]:
+                        predictions[atom_idx][line].append(shift[0])
+                    else:
+                        predictions[atom_idx][line]=[shift[0]]
+        # Calculate average predictions, and get real values
+        analysis={"%s_%s"%(a,b):[] for a in atom for b in ["pred","real","pred_std"]}
+        for i in predictions[0]:
+            for atom_idx,atom_ in enumerate(atom):
+                analysis[atom_+"_pred"].append(np.average(predictions[atom_idx][i]))
+                analysis[atom_+"_pred_std"].append(np.std(predictions[atom_idx][i]))
+                analysis[atom_+"_real"].append(dat.loc[i][atom_])
     analysis=pd.DataFrame(analysis)
     for atom_idx,atom_ in enumerate(atom):
         analysis[atom_+"_pred"]*=std[atom_idx]
