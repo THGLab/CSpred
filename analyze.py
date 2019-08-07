@@ -6,19 +6,24 @@ import matplotlib.pyplot as plt
 import sys
 
 address=sys.argv[1]
-train_df=pd.read_csv(address+"/train_analysis.csv")
+try:
+    train_df=pd.read_csv(address+"/train_analysis.csv")
+    has_train=True
+except:
+    has_train=False
 test_df=pd.read_csv(address+"/test_analysis.csv")
 
 atom_names = ['HA', 'H', 'CA', 'CB', 'C', 'N']
 present_atoms=[atom for atom in atom_names if atom+"_pred" in train_df.columns]
 
 for atom in present_atoms:
-    train_pred=train_df[atom+"_pred"]
-    train_real=train_df[atom+"_real"]
     test_pred=test_df[atom+"_pred"]
     test_real=test_df[atom+"_real"]
     plt.figure()
-    plt.scatter(train_real,train_pred,s=0.1,label="Train")
+    if has_train:
+        train_pred=train_df[atom+"_pred"]
+        train_real=train_df[atom+"_real"]
+        plt.scatter(train_real,train_pred,s=0.1,label="Train")
     plt.scatter(test_real,test_pred,s=0.1,label="Test")
     plt.plot([-1,1],[-1,1],"r:")
     plt.legend()
