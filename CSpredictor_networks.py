@@ -1822,8 +1822,6 @@ def cnn_model(data, atom,arch, activ='elu', lrate=0.001, mom=0, dec=10**-6, epoc
         
     '''
     num_shifts=len(atom)
-    if not len(shift_heads) == num_shifts:
-        raise RuntimeError("Number of shift heads and number of atom types for prediction don't match!")
     # Predicting only center residue requires odd window
     if rolling and center_only:
         if window % 2 is 0:

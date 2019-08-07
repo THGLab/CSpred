@@ -14,7 +14,7 @@ except:
 test_df=pd.read_csv(address+"/test_analysis.csv")
 
 atom_names = ['HA', 'H', 'CA', 'CB', 'C', 'N']
-present_atoms=[atom for atom in atom_names if atom+"_pred" in train_df.columns]
+present_atoms=[atom for atom in atom_names if atom+"_pred" in test_df.columns]
 
 for atom in present_atoms:
     test_pred=test_df[atom+"_pred"]
