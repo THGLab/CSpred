@@ -1763,8 +1763,25 @@ def conv_1d_block(num_nodes,pooling_filter,pooling_stride,inp,activ="elu",poolin
         output=keras.layers.MaxPooling1D(pooling_filter,strides=pooling_stride)(layer)
     return output
 
+def conv_block(input_layer,num_units,filter_size):
+    layer=input_layer
+    for unit,filter in zip(num_units,filter_size):
+        layer=Conv1D(unit,filter,padding="same")(layer)
+        layer=BatchNormalization()(layer)
+        layer=ELU()(layer)
+    return layer
 
-def cnn_model(data, atom,arch, activ='elu', lrate=0.001, mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None, early_stop=None, val_split=0.2, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0.0, clip_norm=0.0, reject_outliers=None, noise=None, noise_type='angle', noise_dist='uniform', batch_size=64, lsuv_batch=64,window=7):
+def dense_block(input_layer,n):
+    conv1=conv_block(input_layer,[n,n,n],[3,3,5])
+    conv2=conv_block(conv1,[n,n,n],[3,3,5])
+    comb1=Concatenate()([conv1,conv2])
+    conv3=conv_block(comb1,[n,n,n],[3,3,5])
+    comb2=Concatenate()([conv1,conv2,conv3])
+    conv4=conv_block(comb2,[n,n,n],[3,3,5])
+    ap=AveragePooling1D(3,strides=2)(conv4)
+    return ap
+
+def cnn_model(data, atom,arch, activ='elu', lrate=0.001, mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None, early_stop=None, es_data=None,val_split=0.2, bnorm=False, lsuv=False, nest=False, norm_shifts=True, opt_override=False, clip_val=0.0, clip_norm=0.0, reject_outliers=None, noise=None, noise_type='angle', noise_dist='uniform', batch_size=64, lsuv_batch=64,window=7):
     '''Constructs a model from the given features and shifts for the requested atom.  The model is trained for the given number of epochs with the loss being checked every per epochs.  Training stops when this loss increases by more than tol. The arch argument is a list specifying the number of hidden units at each layer.
     
     args:
@@ -1785,6 +1802,7 @@ def cnn_model(data, atom,arch, activ='elu', lrate=0.001, mom=0, dec=10**-6, epoc
         reg - Parameter for weight regularization of dense layers (Float)
         reg_type - Type of weight regularization to use (Str - L1 or L2)
         early-stop - Whether or not and how to do early-stopping (None or Str - 'GL', 'PQ', or 'UP')
+        es_data = Dataframe for doing early-stopping, used for fixed train/val/test split
         bnorm - Use batch normalization (Bool)
         lsuv - Use layer-wise sequential unit variance initialization (Bool)
         nest - Use Nesterov momentum (Bool)
@@ -1803,66 +1821,15 @@ def cnn_model(data, atom,arch, activ='elu', lrate=0.001, mom=0, dec=10**-6, epoc
     returns:
         
     '''
-    dat=data.copy()
-    for atom_ in atom:
-        dat = dat[dat[atom_].notnull()]
-    
-    # Split the data by chain and train/validation sets
-    train_set, val_set = sep_by_chains(dat, atom=atom, split=val_split)
-    full_set = train_set + val_set
+    num_shifts=len(atom)
+    if not len(shift_heads) == num_shifts:
+        raise RuntimeError("Number of shift heads and number of atom types for prediction don't match!")
+    # Predicting only center residue requires odd window
+    if rolling and center_only:
+        if window % 2 is 0:
+            window += 1
 
-    # Metadata has already been used (in sep_by_chains), so now can safely remove them from featues
-    for col in cols_to_drop:
-        try:
-            dat = dat.drop(col, axis=1)
-        except KeyError:
-            pass
-        except ValueError:
-            pass
-
-    if norm_shifts:
-        shifts_means = dat[atom].mean()
-        shifts_stds = dat[atom].std()
-    else:
-        shifts_means = len(atom) * [0]
-        shifts_stds = len(atom) * [1]
-    
-    # feats, shifts, shifts_mean, shifts_std = mtl_data_prep(data, atom, reject_outliers=reject_outliers, norm_shifts=norm_shifts)
-
-    to_remove = list(set(atom_names) - set(atom))
-    for atom_ in to_remove:
-        try:
-            ring_col = atom_ + '_RC'
-            dat = dat.drop(ring_col, axis=1)
-            ring_mean = dat[dat[ring_col].notnull()][ring_col].mean()
-            dat[ring_col] = dat[ring_col].fillna(value=ring_mean)
-        except KeyError:
-            pass
-        except ValueError:
-            pass
-        try:
-            rcoil_col = 'RCOIL_' + atom_
-            dat = dat.drop(rcoil_col, axis=1)
-        except KeyError:
-            pass
-        except ValueError:
-            pass
-
-    
-    # Get total number of features
-    num_feats = dat.shape[1]-len(atom_names)
-
-    # Create generators for training and validation data as well as full data
-    train_gen = chain_batch_generator(dat, train_set, atom, window,
-     norm_shifts=(shifts_means, shifts_stds), sample_weights=False, randomize=False,batch_size=batch_size,center_only=True)
-    val_gen = chain_batch_generator(dat, val_set, atom, window, norm_shifts=(shifts_means, shifts_stds), 
-    sample_weights=False, randomize=False,batch_size=batch_size,center_only=True)
-    full_gen = chain_batch_generator(dat, full_set, atom, window, norm_shifts=(shifts_means, shifts_stds),
-     sample_weights=False, randomize=False,batch_size=batch_size,center_only=True)
-
-    train_steps = math.ceil(sum([len(chain)-window+1 for chain in train_set if len(chain)>=window])/batch_size)
-    val_steps = math.ceil(sum([len(chain)-window+1 for chain in val_set if len(chain)>=window])/batch_size)
-    full_steps = train_steps+val_steps
+    data_gen,steps,num_feats,shifts_mean,shifts_std=rnn_data_prep(data,atom,window,batch_size,norm_shifts,val_split=val_split if es_data is None else None)
     
     opt = make_optimizer(opt_type, lrate, mom, dec, nest, clip_norm=clip_norm, clip_val=clip_val, opt_override=opt_override)
     
@@ -1899,93 +1866,29 @@ def cnn_model(data, atom,arch, activ='elu', lrate=0.001, mom=0, dec=10**-6, epoc
         
     # Get initial weights to reset model after pretraining
     weights = mod.get_weights()
-
-# Initialize some outputs
-    hist_list = []
-    val_list = []
-    param_list = []
-    pt1=0
-    
-    # Do pretraining to determine the best number of epochs for training
-    val_min = 10 ** 10
-    up_count = 0
-    retrain=not type(early_stop) is int
-
     if early_stop is not None:
-        for i in range(int(epochs/per)):
-            if pt1==0:
-                try:
-                    evaluate_result=mod.evaluate_generator(val_gen, steps=val_steps)
-                    if type(evaluate_result) is np.float64:
-                        evaluate_result=[evaluate_result,evaluate_result] 
-                    pt1 = sum(evaluate_result)/2
-                except:
-                    print("Failed on first call of evaluation, retrying...")
-                    pt1 = sum(mod.evaluate_generator(val_gen, steps=val_steps))/2
-            else:
-                pt1=pt2
-    
-            if pt1 < val_min:
-                val_min = pt1
-    
-            hist = mod.fit_generator(train_gen, steps_per_epoch=train_steps, epochs=per)
-            hist_list += hist.history['loss']
-            evaluate_result=mod.evaluate_generator(val_gen, steps=val_steps)
-            if type(evaluate_result) is np.float64:
-                evaluate_result=[evaluate_result,evaluate_result] 
-            pt2 = sum(evaluate_result)/2
-            val_list.append(pt2)
-
-
-            print('The validation loss at round ' + str(i+1) + ' is ' + str(pt2))
-            print([atom_type+":"+str(np.sqrt(atom_error)*atom_std) for atom_type,atom_error,atom_std in zip(atom,evaluate_result[1:],shifts_stds)])
-
-            if early_stop == 'GL' or early_stop == 'PQ':
-                gl = 100 * (pt2/val_min - 1)
-                
-                if early_stop == 'GL':
-                    param_list.append(gl)
-                    if gl > tol and (i+1)*per>=min_epochs:
-                        print('Broke loop at round ' + str(i+1))
-                        break
-                
-                if early_stop == 'PQ':
-                    strip_avg = np.array(hist.history['loss']).mean()
-                    strip_min = min(np.array(hist.history['loss']))
-                    p = 1000 * (strip_avg / strip_min - 1)
-                    pq = gl / p
-                    param_list.append(pq)
-                    if pq > tol and (i+1)*per>=min_epochs:
-                        print('Broke loop at round ' + str(i+1))
-                        break
-            
-            if early_stop == 'UP':
-                if pt2 > pt1:
-                    up_count += 1
-                    param_list.append(up_count)
-                    if up_count >= tol and (i+1)*per>=min_epochs:
-                        print('Broke loop at round ' + str(i+1))
-                        break
-                else:
-                    up_count = 0
-                    param_list.append(up_count)
-
-        if not retrain:
-            val_epochs=epochs       
-        else:        
-            min_epochs_pos=max(int(min_epochs/per-1),0)  
-            val_list_after_min_epoch=val_list[min_epochs_pos:]    
-            min_val_idx=np.argmin(val_list_after_min_epoch)+min_epochs_pos+1
-            #min_val_idx = min((val, idx) for (idx, val) in enumerate(val_list))[1]+1
-            #val_epochs = max(min_val_idx * per, min_epochs)
-            val_epochs=min_val_idx * per
+        if es_data is None:
+            train_gen,val_gen,full_gen=data_gen
+            train_steps,val_steps,full_steps=steps
+            val_epochs, hist_list, val_list, param_list=generator_early_stopping(mod,atom,shifts_std,early_stop,tol,per,epochs,min_epochs,batch_size,train_gen,train_steps,val_gen,val_steps)
+        else:
+            val_gen,val_steps,_,_,_=rnn_data_prep(es_data,atom,window,batch_size,norm_stats=(shifts_mean,shifts_std))
+            val_epochs, hist_list, val_list, param_list=generator_early_stopping(mod,atom,shifts_std,early_stop,tol,per,epochs,min_epochs,batch_size,data_gen,steps,val_gen,val_steps)
     else:
         val_epochs = epochs
-
+        val_list = []
+        hist_list = []
+        param_list = []
+        retrain=True
     if retrain:
         mod.set_weights(weights)
-        mod.fit_generator(full_gen, steps_per_epoch=full_steps, epochs=val_epochs,use_multiprocessing=MULTI_PROCESSING,workers=1)
-    return shifts_means, shifts_stds, val_list, hist_list, param_list, mod
+        if es_data is None:
+            mod.fit_generator(full_gen, steps_per_epoch=full_steps, epochs=val_epochs,verbose=VERBOSITY0,use_multiprocessing=USE_MULTIPROCESSING,workers=1)
+        else:
+            data_all=pd.concat([data,es_data],ignore_index=True)
+            data_gen,steps,num_feats,shifts_mean,shifts_std = rnn_data_prep(data_all, atom,window,batch_size,norm_shifts)
+            mod.fit_generator(data_gen, steps_per_epoch=steps, epochs=val_epochs,verbose=VERBOSITY,use_multiprocessing=USE_MULTIPROCESSING,workers=1)
+    return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
     
 
 def hard_mtl_fc(data, atoms, arch, activ='prelu', lrate=0.001, mom=0, dec=10**-6, epochs=100, min_epochs=5, per=5, tol=1.0, opt_type='sgd', do=0.0, drop_last_only=False, reg=0.0, reg_type=None,
