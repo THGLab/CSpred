@@ -21,6 +21,7 @@ from Bio.SeqUtils import IUPACData
 from keras.utils import plot_model
 from keras import backend as K
 from numpy import newaxis
+import toolbox
 USE_MULTIPROCESSING=True
 VERBOSITY=2
 #from chemshift_prediction.lsuv_init import LSUVinit
@@ -1371,7 +1372,10 @@ def generator_early_stopping(mod, atoms, shifts_std, method, tol, per, epochs, m
     pt1=val_min
     for i in range(int(epochs/per)):
         if pt1==val_min:
-            evaluate_result = mod.evaluate_generator(val_gen,steps=val_steps,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
+            try:
+                evaluate_result = mod.evaluate_generator(val_gen,steps=val_steps,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
+            except TypeError:
+                evaluate_result = mod.evaluate_generator(val_gen,steps=val_steps,use_multiprocessing=USE_MULTIPROCESSING)
             if type(evaluate_result) is np.float64:
                 evaluate_result=[evaluate_result,evaluate_result] 
                 pt1 = sum(evaluate_result)/2
@@ -1380,7 +1384,10 @@ def generator_early_stopping(mod, atoms, shifts_std, method, tol, per, epochs, m
             pt1=pt2
         if pt1 < val_min:
             val_min = pt1
-        hist = mod.fit_generator(train_gen, steps_per_epoch=train_steps, epochs=per,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
+        try:
+            hist = mod.fit_generator(train_gen, steps_per_epoch=train_steps, epochs=per,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
+        except TypeError:
+            hist = mod.fit_generator(train_gen, steps_per_epoch=train_steps, epochs=per,use_multiprocessing=USE_MULTIPROCESSING)
         hist_list += hist.history['loss']
         evaluate_result=mod.evaluate_generator(val_gen, steps=val_steps,use_multiprocessing=USE_MULTIPROCESSING,verbose=VERBOSITY)
         if type(evaluate_result) is np.float64:
@@ -1766,9 +1773,9 @@ def conv_1d_block(num_nodes,pooling_filter,pooling_stride,inp,activ="elu",poolin
 def conv_block(input_layer,num_units,filter_size):
     layer=input_layer
     for unit,filter in zip(num_units,filter_size):
-        layer=Conv1D(unit,filter,padding="same")(layer)
-        layer=BatchNormalization()(layer)
-        layer=ELU()(layer)
+        layer=keras.layers.Conv1D(unit,filter,padding="same")(layer)
+        layer=keras.layers.BatchNormalization()(layer)
+        layer=keras.layers.ELU()(layer)
     return layer
 
 def dense_block(input_layer,n):
@@ -1823,9 +1830,8 @@ def cnn_model(data, atom,arch, activ='elu', lrate=0.001, mom=0, dec=10**-6, epoc
     '''
     num_shifts=len(atom)
     # Predicting only center residue requires odd window
-    if rolling and center_only:
-        if window % 2 is 0:
-            window += 1
+    if window % 2 is 0:
+        window += 1
 
     data_gen,steps,num_feats,shifts_mean,shifts_std=rnn_data_prep(data,atom,window,batch_size,norm_shifts,val_split=val_split if es_data is None else None)
     
@@ -1834,10 +1840,18 @@ def cnn_model(data, atom,arch, activ='elu', lrate=0.001, mom=0, dec=10**-6, epoc
     regularizer = make_reg(reg, reg_type)
     # Build model
     input_layer=keras.layers.Input((window,num_feats))
-    block1=conv_1d_block([150,100,100],4,1,input_layer,activ)
-    block2=conv_1d_block([100,50,50],2,2,block1,activ)
-    flattened=keras.layers.Flatten()(block2)
-    fc=keras.layers.Dense(50)(flattened)
+    #block1=conv_1d_block([150,100,100],4,1,input_layer,activ)
+    #block2=conv_1d_block([100,50,50],2,2,block1,activ)
+    layer=input_layer
+    for level,node in enumerate(arch):
+        layer=conv_block(layer,[node],[3])
+        if level==len(arch)-1:
+            layer=keras.layers.GlobalAveragePooling1D()(layer)
+        else:
+            layer=keras.layers.AveragePooling1D(3,strides=1)(layer)
+    #flattened=keras.layers.Flatten()(layer)
+    #fc=keras.layers.Dense(50)(flattened)
+    fc=keras.layers.Dense(50)(layer)
     if activ=="relu":
             fc=keras.layers.ReLU()(fc)
     elif activ=="prelu":
@@ -1847,7 +1861,7 @@ def cnn_model(data, atom,arch, activ='elu', lrate=0.001, mom=0, dec=10**-6, epoc
     head_layers=[]
     for _ in atom:
         head_fc=fc
-        head_fc=keras.layers.Dense(32)(head_fc)
+        head_fc=keras.layers.Dense(25)(head_fc)
         if activ=="relu":
             head_fc=keras.layers.ReLU()(head_fc)
         elif activ=="prelu":
@@ -3163,7 +3177,7 @@ def bidir_lstm_model(data, atom, shared_arch, shift_heads, activ='prelu', lrate=
     return shifts_mean, shifts_std, val_list, hist_list, param_list, mod
     
 # Here, we build some evaluators to combine operations needed to get the rmsd of different types of models
-def fc_eval(data, model, atom, mean=0, std=1, reject_outliers=None, split_numeric=False, split_class=False):
+def fc_eval(data, model, atom, mean=0, std=1, reject_outliers=None, split_numeric=False, split_class=False, return_preds=False):
     '''Function for evaluating the performance of fully connected and residual networks.
     
     mean = Mean to use for standardizing the targets in data (Float)
@@ -3174,6 +3188,7 @@ def fc_eval(data, model, atom, mean=0, std=1, reject_outliers=None, split_numeri
     reject_outliers = Shifts that differ from mean by more than this multiple of std are dropped before evaluation (Float or None)
     split_numeric = If true, split the numeric columns in the dataset as separate input (bool)
     split_class = If true, split the classification bins as separate input. Only effective when split_numeric=True (bool)
+    return_preds = If true, return all the predictions (normalized) instead of RMSE
     '''
     
     dat = data[data[atom].notnull()]
@@ -3232,10 +3247,14 @@ def fc_eval(data, model, atom, mean=0, std=1, reject_outliers=None, split_numeri
             feats=[feats_numeric.values,feats_non_numeric]
     else:
         feats=feats.values
-    shifts=dat[atom].values
-    shifts_norm=(shifts-mean)/std
-    mod_eval = model.evaluate(feats, shifts_norm, verbose=0)
-    return np.sqrt(mod_eval) * std
+    if return_preds:
+        pred = model.predict(feats, verbose=VERBOSITY)
+        return pred
+    else:
+        shifts=dat[atom].values
+        shifts_norm=(shifts-mean)/std
+        mod_eval = model.evaluate(feats, shifts_norm, verbose=0)
+        return np.sqrt(mod_eval) * std
 
 
 def mtl_eval(data, model, atoms, mean=None, std=None, reject_outliers=None, testing=False):
@@ -3442,6 +3461,60 @@ def plot(history,val_list,per,fig_name,format_type):
     plt.legend()
     plt.savefig(str(fig_name)+'.'+format_type,format=format_type)
     print("Saved training curve "+str(fig_name)+'.'+format_type)
+
+
+def kfold_selection(k,data,atom):
+    '''
+    Function to train k parallel models, with each model using half of the data for training and half for testing on a small model (i.e. sparta+ model) to evaluate the error for each specific training case, and use it to select those "outlier" training examples
+
+    k = Number of total models (Even Int)
+    data = Features and targets (Pandas DataFrame)
+    atom = Name of atom for which to do training data selection (Str)
+    '''
+    dat = data[data[atom].notnull()]
+    all_idxs=np.arange(len(dat))
+    np.random.shuffle(all_idx)
+    all_idx=all_idx*2 # duplicate the list so that taking different portions for training/testing is easier
+    block_size=int(len(dat)/k)
+    count=0
+    # args for sparta+ model
+    args=[[30],"tanh"]
+    kw_args={"early_stop":"GL",
+        "tol":2.5,
+        "per":5,
+        "min_epochs": 10,
+        "epochs": 100,
+        "opt_type": "adam",
+        "lrate": 5e-05,
+        "do": 0.0}
+    results={idx:{"train":[],"test":[]} for idx in all_idxs}
+    for i in range(k):
+        train_idx=all_idxs[i*block_size:(i+int(k/2))*block_size]
+        test_idx=all_idxs[(i+int(k/2))*block_size:(i+k)*block_size]
+        train_df, test_df = dat.iloc[train_idx], dat.iloc[test_idx]
+        if count>0:
+	    kw_args["early_stop"]=None
+	    kw_args["epochs"]=val_epochs
+        print("Round",count+1)
+        mean,std,val_list,history,param_list,mod=fc_model(train_df,atom,*args,**kw_args)
+        val_arr=np.array(val_list)
+        try:
+            val_eps=5*(np.argmin(val_arr)+1)
+        except ValueError:
+            pass
+        print("Analyzing testing results...")
+        preds=fc_eval(test_df,mod,atom,mean,std,return_preds=True)
+        for idx,pred in zip(test_idx,preds):
+            results[idx]["test"].append(pred*std+mean)
+        print("Analyzing training results...")
+        preds=fc_eval(train_df,mod,atom,mean,std,return_preds=True)
+        for idx,pred in zip(train_idx,preds):
+            results[idx]["train"].append(pred*std+mean)
+        count+=1
+    for idx in results:
+        results[idx][atom+"_real"]=dat.iloc[idx][atom]
+    toolbox.dump_pkl(results,"results_"+atom+".pkl")
+
 
 # Need to write a function that does k-fold cross-validation 
 def kfold_crossval(k, data, atom, feval, model, mod_args, mod_kwargs, per=5, out='summary', mod_type='fc', window=9, reuse_val_eps=False, omit_dat=None, one_round=False,save_plot=None):
