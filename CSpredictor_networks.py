@@ -1334,7 +1334,7 @@ def early_stopping(mod, method, tol, per, epochs, min_epochs, batch_size, feat_t
     min_epochs_pos=max(int(min_epochs/per-1),0)  
     val_list_after_min_epoch=val_list[min_epochs_pos:]    
     min_val_idx=np.argmin(val_list_after_min_epoch)+min_epochs_pos
-    val_epochs=min_val_idx * per
+    val_epochs=(min_val_idx + 1) * per
     
     return val_epochs, hist_list, val_list, param_list
 
@@ -3472,9 +3472,9 @@ def kfold_selection(k,data,atom):
     atom = Name of atom for which to do training data selection (Str)
     '''
     dat = data[data[atom].notnull()]
-    all_idxs=np.arange(len(dat))
-    np.random.shuffle(all_idx)
-    all_idx=all_idx*2 # duplicate the list so that taking different portions for training/testing is easier
+    all_idxs=list(range(len(dat)))
+    np.random.shuffle(all_idxs)
+    all_idxs=all_idxs*2 # duplicate the list so that taking different portions for training/testing is easier
     block_size=int(len(dat)/k)
     count=0
     # args for sparta+ model
@@ -3493,8 +3493,8 @@ def kfold_selection(k,data,atom):
         test_idx=all_idxs[(i+int(k/2))*block_size:(i+k)*block_size]
         train_df, test_df = dat.iloc[train_idx], dat.iloc[test_idx]
         if count>0:
-	    kw_args["early_stop"]=None
-	    kw_args["epochs"]=val_epochs
+            kw_args["early_stop"]=None
+            kw_args["epochs"]=val_eps
         print("Round",count+1)
         mean,std,val_list,history,param_list,mod=fc_model(train_df,atom,*args,**kw_args)
         val_arr=np.array(val_list)
@@ -3505,14 +3505,17 @@ def kfold_selection(k,data,atom):
         print("Analyzing testing results...")
         preds=fc_eval(test_df,mod,atom,mean,std,return_preds=True)
         for idx,pred in zip(test_idx,preds):
-            results[idx]["test"].append(pred*std+mean)
+            results[idx]["test"].append(pred[0]*std+mean)
         print("Analyzing training results...")
         preds=fc_eval(train_df,mod,atom,mean,std,return_preds=True)
         for idx,pred in zip(train_idx,preds):
-            results[idx]["train"].append(pred*std+mean)
+            results[idx]["train"].append(pred[0]*std+mean)
         count+=1
     for idx in results:
         results[idx][atom+"_real"]=dat.iloc[idx][atom]
+        results[idx]["PDB"]=dat.iloc[idx]["FILE_ID"]
+        results[idx]["RESNUM"]=dat.iloc[idx]["RES_NUM"]
+        results[idx]["RESNAME"]=dat.iloc[idx]["RESNAME"]
     toolbox.dump_pkl(results,"results_"+atom+".pkl")
 
 

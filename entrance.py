@@ -140,6 +140,10 @@ if configs["spartap_cols_only"]:
 print("Number of training residues:",len(df_train))
 print("Number of validation residues:",len(df_val))
 print("Number of testing residues:",len(df_test))
+if configs.get("training_selection",False):
+    kfold_selection(10,pd.concat([df_train,df_val]),"H")
+    print("Finished!")
+    exit()
 
 if configs.get("fixed_val_test",False):
     val_eps,train_rmsd,val_rmsd,test_rmsd,mod= \
@@ -154,7 +158,7 @@ if configs.get("fixed_val_test",False):
     mod.save(mod_saving_add)
     print("Model saved as",mod_saving_add)
 else:
-    dat=pd.concat(df_train,df_val)
+    dat=pd.concat([df_train,df_val])
     epochs_list, train_rmsd_list, test_rmsd_list= \
     kfold_crossval(configs.get("k",3),dat,configs["atom_list"],eval(configs["evaluation"]),eval(configs["model"]),configs["args"],configs["kwargs"],
     per=configs["per"],out='full',mod_type=configs["mod_type"],window=configs["window"],save_plot="svg")
