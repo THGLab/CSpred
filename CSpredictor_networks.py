@@ -43,7 +43,7 @@ ring_cols = [atom + '_RC' for atom in atom_names]
 #rcoil_cols = ['RC_' + atom for atom in atom_names]
 #ring_cols = [atom + '_RING' for atom in atom_names]
 xtra_ring_cols = ['HA2_RING', 'HA3_RING']
-cols_to_drop = ['Unnamed: 0', 'Unnamed: 0.1', 'Unnamed: 0.1.1', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM',"RES", 'CHAIN', 'RESNAME_ip1', 'RESNAME_im1', 'BMRB_RES_NUM', 'CG', 'RCI_S2', 'MATCHED_BMRB']
+cols_to_drop = ['Unnamed: 0', 'Unnamed: 0.1', 'Unnamed: 0.1.1', 'FILE_ID', 'PDB_FILE_NAME', 'RESNAME', 'RES_NUM',"RES", 'CHAIN', 'RESNAME_ip1', 'RESNAME_im1', 'BMRB_RES_NUM', 'CG', 'RCI_S2', 'MATCHED_BMRB',"identifier"]
 
 # These are needed for the structure-sequence branch model
 col_phipsi = [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i-1', 'SIN_i-1']]

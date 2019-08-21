@@ -176,7 +176,7 @@ sp_feat_cols=['BLOSUM62_NUM_ALA_i-1', 'BLOSUM62_NUM_CYS_i-1', 'BLOSUM62_NUM_ASP_
  'S2_i+1']
 spartap_cols=sp_feat_cols+atom_names+[a+"_RC" for a in atom_names]+["FILE_ID","RESNAME","RES_NUM"]
 col_square=["%s_%s_%s"%(a,b,c) for a in ['PHI','PSI'] for b in ['COS','SIN'] for c in ['i-1','i','i+1']]  
-dropped_cols=["DSSP_%s_%s"%(a,b) for a in ["PHI","PSI"] for b in ['i-1','i','i+1']]+["BMRB_RES_NUM","MATCHED_BMRB","CG","HA2_RING","HA3_RING","RCI_S2"]
+dropped_cols=["DSSP_%s_%s"%(a,b) for a in ["PHI","PSI"] for b in ['i-1','i','i+1']]+["BMRB_RES_NUM","MATCHED_BMRB","CG","HA2_RING","HA3_RING","RCI_S2","identifier"]
 col_lift=[col for col in sp_feat_cols if "BLOSUM" not in col and "_i-1" not in col and "_i+1" not in col]
 non_numerical_cols=['3_10_HELIX_SS_i',"A_HELIX_SS_i","BEND_SS_i","B_BRIDGE_SS_i","CHI1_EXISTS_i","CHI2_EXISTS_i","HN__EXISTS_i","Ha__EXISTS_i","NONE_SS_i","O__EXISTS_i","PI_HELIX_SS_i","STRAND_SS_i","TURN_SS_i"]+protein_letters
 
@@ -277,6 +277,26 @@ def Implant_classification(dataset,model,half_window=20):
     for col in class_names:
         dataset[col]=0
     dataset[class_names]=pred[0]
+
+def filter_outlier(data,atom,outlier_path="./"):
+    '''
+    Function to filter outliers from training and validation data based on PDBID and RESNUM. The outliers were selected out by 10 fold cross validation with sparta+ network with out-of-std predictions
+    '''
+    data["identifier"]=data["FILE_ID"].astype(str)+data["RES_NUM"].map(str)
+    outlier=pd.read_csv(outlier_path+"filtered_"+atom+".csv")
+    for i in range(len(outlier)):
+        identifier=outlier.iloc[i]["PDB"]+str(outlier.iloc[i]["RESNUM"])
+        resname=outlier.iloc[i]["RESNAME"]
+        filtered=data[data["identifier"]==identifier]
+        assert len(filtered)<=1
+        if len(filtered)==1:
+            # this item need to be filtered
+            idx=filtered.iloc[0].name
+            assert data.loc[idx,"RESNAME"]==resname
+            data.loc[idx,atom]=np.nan
+        if((i+1)%100==0):
+            print("%d/%d"%(i+1,len(outlier)),end="\r")
+    data.drop("identifier",axis=1,inplace=True)
 
 
 # Define purifier functions

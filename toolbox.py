@@ -8,6 +8,7 @@ import subprocess
 import sys
 import pandas as pd
 from io import StringIO
+import ssl
 
 protein_dict={pair[0].upper():pair[1] for pair in IUPACData.protein_letters_3to1.items()}
 protein_dict_reverse={pair[1]:pair[0].upper() for pair in IUPACData.protein_letters_3to1.items()}
@@ -17,6 +18,7 @@ RULER="0         1         2         3         4         5         6         7  
 ATOMS=["H","HA","C","CA","CB","N"]
 
 def download_pdb(pdb_id,destination=None):
+    ssl._create_default_https_context = ssl._create_unverified_context
     try:
         data=urlopen("https://files.rcsb.org/download/%s.pdb"%pdb_id)
     except:
@@ -93,18 +95,22 @@ def fetch_seq(pdb_id,chain_id=None):
     else:
         return seq
 
-def decode_seq(seq,supplementary_dict={}):
+def decode_seq(seq,supplementary_dict=None):
+    lookup_dict=protein_dict_reverse
+    if supplementary_dict is not None:
+        for item in supplementary_dict:
+            lookup_dict[item]=supplementary_dict[item]
     seq=seq.upper()
     if len(seq)==1:
-        if supplementary_dict is not None and seq in supplementary_dict:
-            return supplementary_dict[seq]
-        return protein_dict_reverse[seq]
-    for r in protein_dict_reverse:
-        supplementary_dict[r]=None
-    return [protein_dict_reverse.get(r,supplementary_dict[r]) for r in seq]
+        return lookup_dict[seq]
+    return [lookup_dict.get(r,"UNK") for r in seq]
 
-def form_seq(arr):
-    return "".join([protein_dict[r.upper()] for r in arr])
+def form_seq(arr,supplementary_dict=None):
+    lookup_dict=protein_dict
+    if supplementary_dict is not None:
+        for item in supplementary_dict:
+            lookup_dict[item]=supplementary_dict[item]
+    return "".join([lookup_dict[r.upper()] for r in arr])
 
 def load_pkl(path):
     with open(path,"rb") as f:

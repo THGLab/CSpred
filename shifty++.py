@@ -1,0 +1,470 @@
+#!/usr/bin/env python
+# This program executes both sequence-based alignment (using BLAST) and structure-based alignment (usint mTM-align) to find the best alignment for a specific pdb file with entities in the refDB database, and use the average chemical shifts from refDB to predict the chemical shifts for backbone H/C/N atom chemical shifts for the query protein
+
+import Bio
+from Bio import PDB
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from Bio import SeqIO
+from Bio import Align
+from Bio.SubsMat.MatrixInfo import blosum62
+import subprocess
+import os
+import shutil
+import sys
+sys.path.append("/data/jerry/NMR")
+import toolbox
+import pandas as pd
+import numpy as np
+import argparse
+
+# Do checks beforehand to make sure the two alignment programs: BLAST and mTM-align are installed and configured correctly
+try:
+    check_result=subprocess.check_output(["which","blastp"])
+except:
+    check_result=""
+assert len(check_result)!=0,"Cannot find BLAST program! Please make sure BLAST is correctly configured."
+try:
+    check_result=subprocess.check_output(["which","mTM-align"])
+except:
+    check_result=""
+assert len(check_result)!=0,"Cannot find mTM-align program! Please make sure mTM-align is correctly configured."
+
+# ================ Define Random Coils ======================
+# Wishart et al. in J-Bio NMR, 5 (1995) 67-81.
+paper_order = ['Ala', 'Cys','Asp','Glu','Phe','Gly','His','Ile','Lys','Leu','Met','Asn','Pro','Gln','Arg','Ser','Thr','Val','Trp','Tyr']
+
+paper_order = [i.upper() for i in paper_order]
+
+rc_ala = {}
+rc_ala['N'] = [123.8, 118.7, 120.4, 120.2, 120.3, 108.8, 118.2, 119.9,
+               120.4, 121.8, 119.6, 118.7, 0, 119.8, 120.5, 115.7,
+               113.6, 119.2, 121.3, 120.3]
+rc_ala['H'] = [8.24, (8.32 + 8.43) / 2, 8.34, 8.42, 8.30, 8.33, 8.42, 8.00,
+               8.29, 8.16, 8.28, 8.40, 0, 8.32, 8.23, 8.31, 8.15, 8.03,
+               8.25, 8.12]
+rc_ala['HA'] = [4.32, 4.55, 4.71, 4.64, 4.35, 4.62, 3.96, 4.73, 4.17, 4.32,
+                4.34, 4.48, 4.74, 4.42, 4.34, 4.3, 4.47, 4.35, 4.12, 4.66,
+                4.55]
+rc_ala['C'] = [177.8, 174.6, 176.3, 176.6, 175.8, 174.9, 174.1, 176.4, 176.6,
+               177.6, 176.3, 175.2, 177.3, 176.0, 176.3, 174.6, 174.7, 176.3,
+               176.1, 175.9]
+rc_ala['CA'] = [52.5, (58.2 + 55.4) / 2, 54.2, 56.6, 57.7, 45.1, 55.0, 61.1,
+                56.2, 55.1, 55.4, 53.1, 63.3, 55.7, 56.0, 58.3, 61.8, 62.2,
+                57.5, 57.9]
+rc_ala['CB'] = [19.1, (28 + 41.1) / 2, 41.1, 29.9, 39.6, 0, 29, 38.8, 33.1,
+                42.4, 32.9, 38.9, 32.1, 29.4, 30.9, 63.8, 69.8, 32.9, 29.6,
+                38.8]
+randcoil_ala = {i: dict(zip(paper_order, rc_ala[i])) for i in toolbox.ATOMS}
+# When the residue in question is followed by a Proline, we instead use:
+rc_pro = {}
+rc_pro['N'] = [125, 119.9, 121.4, 121.7, 120.9, 109.1, 118.2, 121.7, 121.6,
+               122.6, 120.7, 119.0, 0, 120.6, 121.3, 116.6, 116.0, 120.5,
+               122.2, 120.8]
+rc_pro['H'] = [8.19, 8.30, 8.31, 8.34, 8.13, 8.21, 8.37, 8.06, 8.18,
+               8.14, 8.25, 8.37, 0, 8.29, 8.2, 8.26, 8.15, 8.02, 8.09,
+               8.1]
+rc_pro['HA'] = [4.62, 4.81, 4.90, 4.64, 4.9, 4.13, 5.0, 4.47, 4.60, 4.63, 4.82,
+                5.0, 4.73, 4.65, 4.65, 4.78, 4.61, 4.44, 4.99, 4.84]
+rc_pro['C'] = [175.9, 173, 175, 174.9, 174.4, 174.5, 172.6, 175.0, 174.8,
+               175.7, 174.6, 173.6, 171.4, 174.4, 174.5, 173.1, 173.2, 174.9,
+               174.8, 174.8]
+rc_pro['CA'] = [50.5, 56.4, 52.2, 54.2, 55.6, 44.5, 53.3, 58.7, 54.2, 53.1,
+                53.3, 51.3, 61.5, 53.7, 54.0, 56.4, 59.8, 59.8, 55.7, 55.8]
+rc_pro['CB'] = [18.1, 27.1, 40.9, 29.2, 39.1, 0, 29.0, 38.7, 32.6, 41.7,
+                32.4, 38.7, 30.9, 28.8, 30.2, 63.3, 69.8, 32.6, 28.9, 38.3]
+randcoil_pro = {i: dict(zip(paper_order, rc_pro[i])) for i in toolbox.ATOMS}
+
+EXTERNAL_MAPPINGS={"HIE":"HIS","HID":"HIS","HIP":"HIS","CAS":"CYS","CSD":"CYS","MSE":"MET","CSO":"CYS"}
+
+
+def read_sing_chain_PDB(path,fix_unknown_res=True):
+    '''
+    Reads a pdb file from path and check whether it is single-chained. If true, return the chain object
+    fix_unknown_res = whether or not change the residues with non-standard names into standard names using EXTERNAL_MAPPINGS
+    '''
+    parser=PDB.PDBParser()
+    struc=parser.get_structure("query",path)
+    if len(struc)>1:
+        print("Multiple models exist in this pdb file! Only the first model is taken.")
+    struc=struc[0]
+    assert len(struc)==1,"Multiple chains exist in this pdb file!"
+    chain=struc.child_list[0]
+    if fix_unknown_res:
+        for i in range(len(chain.child_list)):
+            if chain.child_list[i].resname in EXTERNAL_MAPPINGS:
+                print("Warning: residue %s[%d] is recognized as %s"%(chain.child_list[i].resname,chain.child_list[i].id[1],EXTERNAL_MAPPINGS[chain.child_list[i].resname]))
+                chain.child_list[i].resname=EXTERNAL_MAPPINGS[chain.child_list[i].resname]
+            elif chain.child_list[i].resname not in toolbox.protein_dict:
+                print("Warning: Unknown residue encountered: %s[%d]"%(chain.child_list[i].resname,chain.child_list[i].id[1]))
+        io=PDB.PDBIO()
+        io.set_structure(chain)
+        basename=os.path.basename(path)
+        io.save(basename.replace(".pdb","_fix.pdb"))
+    return chain
+
+def chain_to_seq(chain,fasta_output=None,res_num=True):
+    '''
+    Accepts a biopython chain object and returns the sequence of that chain
+    fasta_output = if not None, output the sequence to a fasta file
+    res_num = if true, return the residue numbers in the original PDB file along with the sequence
+    '''
+    residues=[]
+    resnum=[]
+    for residue in chain.child_list:
+        if residue.resname in toolbox.protein_dict:
+            residues.append(residue.resname)
+            resnum.append(residue.id[1])
+    seq=Seq(toolbox.form_seq(residues))
+    if fasta_output:
+        record=SeqRecord(seq,id="query",description="")
+        with open(fasta_output,"w") as f:
+            f.write(record.format("fasta"))
+    if res_num:
+        return seq,resnum
+    else:
+        return seq
+
+class blast_result:
+    def __init__(self):
+        self.pdb_name=""
+        self.score=0
+        self.Evalue=0
+        self.Lmatch=0 # Matched length
+        self.Tmatch=0 # Total length of matched region in matched sequence
+        self.source_seq=""
+        self.target_seq=""
+
+    def parse(self,line):
+        '''
+        Function to parse pdb name, blast score and Evalue from a line in blast output file
+        '''
+        self.pdb_name=line[:5]
+        self.score=float(line.split()[-2])
+        self.Evalue=float(line.split()[-1])
+
+    def parse_match(self,line):
+        '''
+        Function to parse matching length from a line in blast output file
+        '''
+        identity_entry=line.split(",")[0]
+        number_entry=[entry for entry in identity_entry.split() if "/" in entry][0]
+        self.Lmatch,self.Tmatch=[int(n) for n in number_entry.split("/")]
+
+    def parse_seq(self,line,obj):
+        '''
+        Functionb to parse blast source/target sequence in a line of the blast output file
+        obj = "source" / "target"
+        '''
+        if obj=="source":
+            self.source_seq+=line.split()[2]
+        elif obj=="target":
+            self.target_seq+=line.split()[2]
+
+
+def blast(seq,db_name="all_chains.blastdb",cleaning=True,return_aligned_seq=False):
+    '''
+    Execute a blast query on the sequence and return the blast results
+    seq = the query sequence (type: Bio.Seq.Seq) or the path to the fasta file (type: str)
+    db_name = the name of blast database
+    cleaning = if true, clean the files and folders generated by executing the blast program
+    return_aligned_seq = whether include the aligned sequences in the blast_result
+    '''
+    if os.path.exists("blast"):
+        shutil.rmtree("blast")
+    os.mkdir("blast")
+    if type(seq) is str:
+        fasta_name="blast/"+os.path.split(seq)[-1]
+        shutil.copy(seq,fasta_name)
+    elif type(seq) is Bio.Seq.Seq:
+        fasta_name="blast/query.fasta"
+        record=SeqRecord(seq,id="query",description="")
+        with open(fasta_name,"w") as f:
+            f.write(record.format("fasta"))
+    os.system("blastp -db %s -query %s -out %s"%(db_name,fasta_name,"blast/blast.out"))
+    results={}
+    mode="ignore"
+    for line in open("blast/blast.out"):
+        if "Sequences producing significant alignments:" in line:
+            mode="add_match"
+            continue
+        elif line[0]==">":
+                mode=line[1:6]
+        if mode=="add_match" and line.strip()!="":
+            result=blast_result()
+            result.parse(line)
+            results[result.pdb_name]=result
+        else:
+            if mode!="ignore":
+                if "Identities =" in line:
+                    results[mode].parse_match(line)
+                elif "Query" in line and return_aligned_seq:
+                    results[mode].parse_seq(line,"source")
+                elif "Sbjct" in line and return_aligned_seq:
+                    results[mode].parse_seq(line,"target")
+    if cleaning:
+        shutil.rmtree("blast")
+    return results
+
+class mTM_align_result:
+    def __init__(self,pdbid):
+        self.target_name=pdbid
+        self.rmsd=0
+        self.TMscore=0
+        self.source_seq=""
+        self.target_seq=""
+        self.coverage=0
+    
+    def parse_alignment(self,source_seq, target_seq):
+        '''
+        Function to parse the alignment generated by mTM-align (multiple sequences alignment) to the alignments between two
+        '''
+        assert len(source_seq)==len(target_seq)
+        for i in range(len(source_seq)):
+            if source_seq[i]=="-" and target_seq[i]=="-":
+                continue
+            else:
+                self.source_seq+=source_seq[i]
+                self.target_seq+=target_seq[i]
+        self.coverage=len([i for i in range(len(self.source_seq)) if self.source_seq[i]==self.target_seq[i]])/len(self.source_seq)
+
+def mTM_align(source_file,alignment_candidates,db_path="../refDB/pdbs/",cleaning=True):
+    '''
+    Execute a multiple structure alignment for the specified source file with the candidate alignment structures using the mTM-alignment algorithm
+    source_file = file name of the PDB to be aligned with (type: str)
+    alignment_candidates = all candidate alignment PDBIDs (with chain ID) that need to be aligned with (type: List of str)
+    db_path = path that all refDB single chain PDB files are stored
+    cleaning = if true, clean the files and folders generated by executing mTM-align
+    '''
+    if os.path.exists("mTM_align"):
+        shutil.rmtree("mTM_align")
+    os.mkdir("mTM_align")
+    shutil.copy(source_file,"mTM_align/query.pdb")
+    for candidate in alignment_candidates:
+        shutil.copy(db_path+candidate+".pdb","mTM_align/%s.pdb"%candidate)
+    with open("mTM_align/inputs","w") as f:
+        f.write("query.pdb\n")
+        for candidate in alignment_candidates:
+            f.write("%s.pdb\n"%candidate)
+    os.chdir("mTM_align")
+    os.system("mTM-align -i inputs")
+    results={candidate:mTM_align_result(candidate) for candidate in alignment_candidates}
+    with open("pairwise_rmsd.txt") as f:
+        title=f.readline() # Read the first line that is the title
+        title=[item.split(".")[0] for item in title.split()]
+        for line in f:
+            if "query.pdb" in line:
+                wanted_line=line # The line starts with "query.pdb" contains the alignment information that we want
+    for rmsd,candidate_pdb in zip(wanted_line.split()[1:],title):
+        if candidate_pdb!="query":
+            results[candidate_pdb].rmsd=float(rmsd)
+    with open("pairwise_TMscore.txt") as f:
+        title=f.readline() # Read the first line that is the title
+        title=[item.split(".")[0] for item in title.split()]
+        for line in f:
+            if "query.pdb" in line:
+                wanted_line=line # The line starts with "query.pdb" contains the alignment information that we want
+    for score,candidate_pdb in zip(wanted_line.split()[1:],title):
+        if candidate_pdb!="query":
+            results[candidate_pdb].TMscore=float(score)
+    # Read alignments
+    all_alignments=SeqIO.parse("result.fasta","fasta")
+    alignment_seqs={}
+    for alignment in all_alignments:
+        if alignment.id=="query.pdb":
+            query_seq=alignment.seq
+        else:
+            alignment_seqs[alignment.id[:5]]=alignment.seq
+    for seq in alignment_seqs:
+        results[seq].parse_alignment(query_seq,alignment_seqs[seq])
+    os.chdir("../")
+    if cleaning:
+        shutil.rmtree("mTM_align")
+    return results
+
+def get_blosum_value(resname1,resname2):
+    '''
+    Function for acquiring the BLOSUM62 substitution score from res1 to res2
+    '''
+    code1,code2=toolbox.form_seq([resname1,resname2])
+    if (code1,code2) in blosum62:
+        return blosum62[(code1,code2)]
+    else:
+        return blosum62[(code2,code1)]
+
+def Needleman_Wunsch_alignment(seq1,seq2):
+    '''
+    Function for doing global alignment between seq1 and seq2 using Needleman-Wunsch algorithm implemented in Biopython
+    '''
+    aligner=Align.PairwiseAligner()
+    aligner.open_gap_score=-10
+    aligner.extend_gap_score=-0.5
+    aligner.substitution_matrix=blosum62
+    alignment=aligner.align(seq1,seq2)[0]
+    alignment_info=alignment.__str__().split("\n")
+    return alignment_info[0],alignment_info[2]
+
+
+
+def assign_aligned_shifts(source_seq,target_seq,target_id,refDB,strict):
+    '''
+    Function to transfer matched sequence chemical shifts to the source sequence
+    source_seq = the input sequence with chemical shifts to be predicted (type: str)
+    target_seq = one of the matched sequence with the input sequence (type: str)
+    target_id = the PDB identifier (with chain ID) for the target sequence
+    refDB = the refDB database containing the shifts for target protein
+    strict = strictness level of shift transfer (0 - Strict, 1 - Normal, 2 - Permissive)
+
+    Returns a list, with each element being a dictionary about the chemical shift difference at that residue from random coil value for the different atom types, if a faithful match is found 
+    '''
+    refDB_seq=toolbox.form_seq(refDB["RESNAME"].values)
+    shift_seq,pdb_seq=Needleman_Wunsch_alignment(refDB_seq,target_seq.replace("-",""))
+    # source_seq is refDB sequence of matched pdb, target_seq is PDB sequence
+    refDB_seq_shifts=[]
+    n=0
+    for i in range(len(shift_seq)):
+        if shift_seq[i]=="-":
+            refDB_seq_shifts.append({})
+        else:
+            residue=toolbox.decode_seq(shift_seq[i])
+            assert residue==refDB.iloc[n]["RESNAME"]
+            record={atom:refDB.iloc[n][atom] for atom in toolbox.ATOMS}
+            record["TARGET_RESNAME"]=residue
+            record["TARGET_RESNAME_i+1"]=refDB.iloc[n]["RESNAME_i+1"]
+            refDB_seq_shifts.append(record)
+            n+=1
+    refDB_pdb_shifts=[]
+    for i in range(len(shift_seq)):
+        if pdb_seq[i]!="-":
+            refDB_pdb_shifts.append(refDB_seq_shifts[i])
+    query_ref_pdb_shifts=[]
+    n=0
+    for i in range(len(target_seq)):
+        if target_seq[i]=="-":
+            query_ref_pdb_shifts.append({})
+        else:
+            query_ref_pdb_shifts.append(refDB_pdb_shifts[n])
+            n+=1
+    results=[]
+    n=0
+    for i in range(len(source_seq)):
+        if source_seq[i]!="-":
+            shifts=query_ref_pdb_shifts[i]
+            try:
+                shifts["SOURCE_RESNAME"]=toolbox.decode_seq(source_seq[i])
+            except KeyError:
+                shifts["SOURCE_RESNAME"]="UNK"
+            results.append(shifts)
+            n+=1
+    # Finally, transfer shifts to the query sequene based on these rules:
+    #   1) If the residues are the same, shifts are directly transferred
+    #   2) If the target residue is not the same as the source residue, but the BLOSUM substitution score is larger than zero (or using CRAZY GUESS mode), the difference between target shift and random coil values for the target residue is transferred to the source residue
+    #   3) If the target residue is not the same as the source residue and the BLOSUM substitution score is smaller than zero (and not in CRAZY GUESS mode), or no matching residues, the shifts for the source residue is not given
+    for i in range(len(results)):
+        if "TARGET_RESNAME" in results[i]:
+            if strict==2 or (strict==1 and get_blosum_value(results[i]["SOURCE_RESNAME"],results[i]["TARGET_RESNAME"])>0) or (strict==0 and results[i]["SOURCE_RESNAME"]==results[i]["TARGET_RESNAME"]):
+                if results[i]["TARGET_RESNAME_i+1"]=="PRO":
+                    for atom in toolbox.ATOMS:
+                        results[i][atom]-=randcoil_pro[atom][results[i]["TARGET_RESNAME"]]
+                else:
+                    for atom in toolbox.ATOMS:
+                        results[i][atom]-=randcoil_ala[atom][results[i]["TARGET_RESNAME"]]
+            else:
+                results[i]={}
+        else:
+            results[i]={}
+    return results
+
+def main(path,strict,blast_score_threshold=0,e_value_threshold=1,long_Tmatch_threshold=40,short_Tmatch_threshold=20,long_match_percent_threshold=0.15,short_match_percent_threshold=0.4,TMscore_threshold=0.5,rmsd_threshold=2.8,refDB_shifts_path="../refDB/shifts_df/"):
+    '''
+    The main function for calculating chemical shifts using shifty++
+    strict = Strictness level of shift transfer (0 - Strict, 1 - Normal, 2 - Permissive)
+    path = The path to the pdb file that need to be calculated (type: str)
+    blast_score_threshold = minimum score reported by BLAST program required to be considered as a candidate alignment
+    e_value_threshold = maximum expectation value reported by BLAST program required to be considered as a candidate alignment
+    long_Tmatch_threshold = the minimum total length of the matched sequence for applying long_match_percent_threshold
+    long_match_percent_threshold = minimum percentage coverage of the exact matching residues with the matched sequence for a long match
+    short_Tmatch_threshold = the minimum total length of the matched sequence for applying short_match_percent_threshold
+    short_match_percent_threshold = minimum percentage coverage of the exact matching residues with the matched sequence for a short match
+    TMscore_threshold = minimum mTM-align score required to be considered as a good alignment
+    rmsd_threshold = maximum RMSD from mTM-align permitted between two alignment
+    refDB_shifts_path = path to all the csv file storing the refDB shifts
+
+    returns a pandas.DataFrame containing all the calculated shifts
+    '''
+    fixname=os.path.basename(path).replace(".pdb","_fix.pdb")
+    seq,resnum=chain_to_seq(read_sing_chain_PDB(path))
+    blast_result=blast(seq,db_name="train.blastdb",)
+    candidates=[]
+    for result in blast_result.values():
+        if result.score>=blast_score_threshold and result.Evalue<=e_value_threshold:
+            if result.Tmatch>=long_Tmatch_threshold and result.Lmatch/result.Tmatch>=long_match_percent_threshold:
+                candidates.append(result.pdb_name)
+            elif result.Tmatch>=short_Tmatch_threshold and result.Lmatch/result.Tmatch>=short_match_percent_threshold:
+                candidates.append(result.pdb_name)
+                
+    if len(candidates)==0:
+        residues=toolbox.decode_seq(seq)
+        result_dict={"RESNAME":residues,"RESNUM":resnum}
+        df=pd.DataFrame(result_dict)
+        for atom in toolbox.ATOMS:
+            df[atom]=np.nan           
+        print("No sequence in database generates possible alignments")
+        return df,[]
+    if os.path.exists(fixname):
+        mtm_results=mTM_align(fixname,candidates)  
+        os.remove(fixname)
+    else:
+        mtm_results=mTM_align(path,candidates) 
+    final_candidates=[]
+    for result in mtm_results.values():
+        if result.TMscore>TMscore_threshold and result.rmsd<rmsd_threshold:
+            final_candidates.append(result)
+    identities=[result.coverage for result in final_candidates]
+    print("Calculating using %d references with average identity %.2f"%(len(final_candidates),np.average(identities)))
+    refDB={}
+    for item in final_candidates:
+        refDB[item.target_name]=pd.read_csv(refDB_shifts_path+item.target_name+".csv")
+    candidate_shifts=[assign_aligned_shifts(candidate.source_seq,candidate.target_seq,candidate.target_name,refDB[candidate.target_name],strict) for candidate in final_candidates]
+    scores=[candidate.TMscore for candidate in final_candidates]
+    seq_shifts=[]
+    for i in range(len(seq)):
+        resname=toolbox.decode_seq(seq[i])
+        next_pro=False
+        if i+1<len(resnum) and resnum[i+1]==resnum[i]+1:
+            if seq[i+1]=="P": # the next residue in the query protein is proline
+                next_pro=True
+        residue_shifts={}
+        for atom in toolbox.ATOMS:
+            shifts=[]
+            res_scores=[] # probably need to do some non-linear conversion of the scores
+            for candidate_shift,score in zip(candidate_shifts,scores):
+                if atom in candidate_shift[i] and not np.isnan(candidate_shift[i][atom]):
+                    shifts.append(candidate_shift[i][atom])
+                    res_scores.append(np.exp(score*5)*np.exp(get_blosum_value(candidate_shift[i]["SOURCE_RESNAME"],candidate_shift[i]["TARGET_RESNAME"])))
+            if len(shifts)>0:
+                # calculate weighted average for the specific residue based on mTM alignment scores and BLOSUM numbers
+                rc_diff=np.sum(np.array(shifts)*np.array(res_scores))/np.sum(res_scores)
+                if next_pro:
+                    residue_shifts[atom]=rc_diff+randcoil_pro[atom][resname]
+                else:
+                    residue_shifts[atom]=rc_diff+randcoil_ala[atom][resname]
+            else:
+                residue_shifts[atom]=np.nan
+        residue_shifts["RESNAME"]=resname
+        residue_shifts["RESNUM"]=resnum[i]
+        seq_shifts.append(residue_shifts)
+    return pd.DataFrame(seq_shifts),identities
+
+if __name__=="__main__":
+    args=argparse.ArgumentParser(description="This program executes both sequence-based alignment (using BLAST) and structure-based alignment (usint mTM-align) to find the best alignment for a specific pdb file with entities in the refDB database, and use the average chemical shifts from refDB to predict the chemical shifts for backbone H/C/N atom chemical shifts for the query protein")
+    args.add_argument("input",help="The query PDB file for which the shifts are calculated")
+    args.add_argument("--output", "-o",help="Filename of generated output file. A file [shifts.csv] is generated by default",default="shifts.csv")
+    args.add_argument("--strict","-s",help="Strict level of shift transfer:\n\t0 - Strict, only the exact matching residue shifts are transferred\n\t1 - Normal, transfer the shifts for residues that are the same or have positive substitution scores (from BLOSUM62)\n\t2 - Permissive, transfer all shifts regardless of the likeliness of substitution.",type=int,default=1)
+    args=args.parse_args()
+    result,identities=main(args.input,strict=args.strict)
+    result.to_csv(args.output,index=None)
+    toolbox.dump_pkl(identities,"identities.pkl")
+    # result=main("../pdbs/2hw4_A.pdb")
+    # print(result)
+
