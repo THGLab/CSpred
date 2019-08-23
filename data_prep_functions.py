@@ -208,6 +208,27 @@ try:
 except FileNotFoundError:
     pass
 
+# Need to write a function to get targets as differences between raw shifts and the
+# random coil and ring current values
+def diff_targets(data, rings=True, coils=True):
+    '''Function that replaces the shifts column with the difference between the raw
+    shifts and the values in the columns given
+    
+    data = Feature and target data (Pandas DataFrame)
+    rings = Subtract ring current columns from shift columns (Bool)
+    coils = Subtract random coil columns from shift columns (Bool)
+    '''
+    df = data.copy()
+    if rings:
+        df[atom_names] = df[atom_names].values - df[ring_cols].fillna(0).values
+        df.drop(ring_cols, axis=1, inplace=True)
+    
+    if coils:
+        df[atom_names] = df[atom_names].values - df[rcoil_cols].values
+        df.drop(rcoil_cols, axis=1, inplace=True)
+    
+    return df
+
 # Define feature augmentation functions
 
 def feat_pwr(data, columns, pwrs):
@@ -374,7 +395,7 @@ def ha23ambigfix(data, mode=0):
         dat - Data with ring current ambiguity resolved and extra columns dropped
     '''
     dat = data.copy()
-    idx_ha = [int(i) for i in list(dat[dat['HA2_RING'].notnull()].index)]
+    idx_ha = [i for i in list(dat[dat['HA2_RING'].notnull()].index)]
     if mode==0:
         for i in idx_ha:
             dat.loc[i, 'HA_RC'] = (dat.loc[i, 'HA2_RING'] + dat.loc[i, 'HA3_RING']) / 2
