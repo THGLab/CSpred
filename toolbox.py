@@ -1,4 +1,5 @@
 from Bio.SeqUtils import IUPACData
+from Bio import PDB
 from urllib.request import urlopen
 import pickle
 import os
@@ -17,7 +18,7 @@ protein_dict_reverse={pair[1]:pair[0].upper() for pair in IUPACData.protein_lett
 RULER="0         1         2         3         4         5         6         7         8         9        10        11        12"
 ATOMS=["H","HA","C","CA","CB","N"]
 
-def download_pdb(pdb_id,destination=None):
+def download_pdb(pdb_id,chain_id=None,destination=None):
     ssl._create_default_https_context = ssl._create_unverified_context
     try:
         data=urlopen("https://files.rcsb.org/download/%s.pdb"%pdb_id)
@@ -32,6 +33,22 @@ def download_pdb(pdb_id,destination=None):
     filepath=destination+"/%s.pdb"%pdb_id
     with open(filepath,"w") as f:
         f.writelines(s)
+    if chain_id!=None:
+        parser=PDB.PDBParser()
+        struc=parser.get_structure(pdb_id+chain_id,filepath)
+        if len(struc)>1:
+            print("Multiple structures found for %s, only the first structure is taken."%pdb_id)
+            struc=struc[0]
+        chains=[item for item in struc.get_chains() if item.id==chain_id]
+        if len(chains)!=1:
+            print("Cannot find chain %s for PDB %s"%(chain_id,pdb_id))
+            return False
+        else:
+            io=PDB.PDBIO()
+            io.set_structure(chains[0])
+            os.remove(filepath)
+            filepath=destination+"/%s.pdb"%(pdb_id+chain_id)
+            io.save(filepath)
     print("PDB %s downloaded to %s"%(pdb_id,filepath))
     return True
     

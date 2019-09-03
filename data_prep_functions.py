@@ -384,6 +384,21 @@ def medianize(data, cols, medians=None):
         dat.loc[(dat[col] == 0), col] = med_dict[col]
     return meds, dat
 
+def rc_fix(data,use_null=False):
+    '''
+    Function to replace zeroes in random coils into some more reasonable values
+    use_null - If true, set null to those values that have unknown random coil values
+    '''
+    if use_null:
+        checklist={"N":["PRO",np.nan],"H":["PRO",np.nan],"CB":["GLY",np.nan]}
+    else:
+        checklist={"N":["PRO",119.5],"H":["PRO",8.23],"CB":["GLY",36.8]}
+    for atom in atom_names:
+        zero_indices=data[data["RCOIL_"+atom]==0].index
+        for idx in zero_indices:
+            assert data.loc[idx,"RESNAME"]==checklist[atom][0]
+            data.loc[idx,"RCOIL_"+atom]=checklist[atom][1]
+
 def ha23ambigfix(data, mode=0):
     '''Function to use the HA2/HA3 ring current calculations in a way that resolves ambiguity.
     
