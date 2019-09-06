@@ -91,12 +91,18 @@ def read_sing_chain_PDB(path,fix_unknown_res=True):
     assert len(struc)==1,"Multiple chains exist in this pdb file!"
     chain=struc.child_list[0]
     if fix_unknown_res:
+        deletion=[]
         for i in range(len(chain.child_list)):
             if chain.child_list[i].resname in EXTERNAL_MAPPINGS:
                 print("Warning: residue %s[%d] is recognized as %s"%(chain.child_list[i].resname,chain.child_list[i].id[1],EXTERNAL_MAPPINGS[chain.child_list[i].resname]))
                 chain.child_list[i].resname=EXTERNAL_MAPPINGS[chain.child_list[i].resname]
             elif chain.child_list[i].resname not in toolbox.protein_dict:
+                # Removing the unrecognized residues
                 print("Warning: Unknown residue encountered: %s[%d]"%(chain.child_list[i].resname,chain.child_list[i].id[1]))
+                deletion.append(chain.child_list[i].id)
+        if len(deletion)>0:
+            for item in deletion:
+                chain.detach_child(item)
         io=PDB.PDBIO()
         io.set_structure(chain)
         basename=os.path.basename(path)
@@ -135,6 +141,8 @@ class blast_result:
         self.source_seq=""
         self.target_seq=""
         self.coverage=0
+        self.__last_source_num=0
+        self.__last_target_num=0
 
     def parse(self,line):
         '''
@@ -157,14 +165,23 @@ class blast_result:
         Functionb to parse blast source/target sequence in a line of the blast output file
         obj = "source" / "target"
         '''
+        start_num=int(line.split()[1])
+        end_num=int(line.split()[3])
         if obj=="source":
-            self.source_seq+=line.split()[2]
+            if self.source_seq=="" or start_num==self.__last_source_num+1:
+                self.source_seq+=line.split()[2]
+                self.__last_source_num=end_num
         elif obj=="target":
-            self.target_seq+=line.split()[2]
+            if self.target_seq=="" or start_num==self.__last_target_num+1:
+                self.target_seq+=line.split()[2]
+                self.__last_target_num=end_num
 
-    def calc_coverage(self):
+    def calc_coverage(self,len_total):
+        '''
+        Calculate coverage of a blast match. Because the source sequence from blast may be shorter than the real sequence, the total length of the real sequence must be provided.
+        '''
         assert self.source_seq!="" and self.target_seq!=""
-        self.coverage=len([i for i in range(len(self.source_seq)) if self.source_seq[i]==self.target_seq[i]])/len(self.source_seq)
+        self.coverage=len([i for i in range(len(self.source_seq)) if self.source_seq[i]==self.target_seq[i]])/len_total
 
 
 def blast(seq,db_name="refDB.blastdb",cleaning=True,return_aligned_seq=False):
@@ -202,7 +219,10 @@ def blast(seq,db_name="refDB.blastdb",cleaning=True,return_aligned_seq=False):
         else:
             if mode!="ignore":
                 if "Identities =" in line:
-                    results[mode].parse_match(line)
+                    if results[mode].source_seq=="":
+                        results[mode].parse_match(line)
+                    else:
+                        mode="ignore"
                 elif "Query" in line and return_aligned_seq:
                     results[mode].parse_seq(line,"source")
                 elif "Sbjct" in line and return_aligned_seq:
@@ -361,6 +381,9 @@ def assign_aligned_shifts(source_seq,target_seq,target_id,refDB,strict):
             refDB_seq+="-"*(refDB.loc[i,"RES_NUM"]-start)
             start=refDB.loc[i,"RES_NUM"]+1
             refDB_seq+=toolbox.form_seq([refDB.loc[i,"RESNAME"]])
+    if len(source_seq)!=len(target_seq):
+        # Make sure source seq and target seq are aligned at first place
+        source_seq,target_seq=Needleman_Wunsch_alignment(source_seq,target_seq)
     shift_seq,pdb_seq=Needleman_Wunsch_alignment(refDB_seq,target_seq.replace("-",""))
     # source_seq is refDB sequence of matched pdb, target_seq is PDB sequence
     refDB_seq_shifts=[]
@@ -452,14 +475,14 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
                 if not exclude:
                     candidates.append(result)
                 else:
-                    if not (result.Lmatch/result.Tmatch > 0.99 and result.Lmatch/len(seq) > 0.99):
+                    if not result.Lmatch/len(seq) > 0.99:
                         candidates.append(result)
             elif result.Tmatch>=short_Tmatch_threshold and result.Lmatch/result.Tmatch>=short_match_percent_threshold:
                 # Short matches
                 if not exclude:
                     candidates.append(result)
                 else:
-                    if not (result.Lmatch/result.Tmatch > 0.99 and result.Lmatch/len(seq) > 0.99):
+                    if not result.Lmatch/len(seq) > 0.99:
                         candidates.append(result)
                 
     if len(candidates)==0:
@@ -472,35 +495,42 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
         if os.path.exists(fixname):
             os.remove(fixname)
         return df,[]
-    final_candidates=[]
+    final=[]
     identities=[]
     if shifty:
         # In SHIFTY mode, do not do structural alignment
         for i in range(len(candidates)):
-            candidates[i].calc_coverage()
+            candidates[i].calc_coverage(len(seq))
         best_match=np.argmax([item.score for item in candidates])
-        final_candidates.append(candidates[best_match])
+        final.append(candidates[best_match])
         identities.append(candidates[best_match].coverage)
         if os.path.exists(fixname):
             os.remove(fixname)
     else:
+        # Do mTM alignment
         candidates=[item.target_name for item in candidates]
         if os.path.exists(fixname):
             mtm_results=mTM_align(fixname,candidates)  
             os.remove(fixname)
         else:
             mtm_results=mTM_align(path,candidates) 
+        blast_scores=[]
         for result in mtm_results.values():
             if result.TMscore>TMscore_threshold and result.rmsd<rmsd_threshold and result.coverage>coverage_threshold:
                 # Calculate identity based on alignment in refDB
-                blast_result[result.target_name].calc_coverage()
+                blast_result[result.target_name].calc_coverage(len(seq))
                 identity=blast_result[result.target_name].coverage
-                if exclude and (identity>0.99 or (result.coverage==1 and result.rmsd==0)):
+                # if exclude and (identity>0.99 or (result.coverage==1 and result.rmsd==0)):
+                if False: # Don't check based on structure
                     pass
                 else:
-                    final_candidates.append(result)
+                    final.append(result)
                     identities.append(identity)
-    if len(final_candidates)==0:
+                    blast_scores.append(blast_result[result.target_name].score)
+        # Calculate normalized blast scores so that it can be considered together with 
+        if len(blast_scores)>0:
+            normalized_blast_scores=np.array(blast_scores)/np.max(blast_scores)
+    if len(final)==0:
         residues=toolbox.decode_seq(seq)
         result_dict={"RESNAME":residues,"RESNUM":resnum}
         df=pd.DataFrame(result_dict)
@@ -508,19 +538,20 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
             df[atom]=np.nan           
         print("No significant structure alignment is possible!")
         return df,[]
-    print("Calculating using %d references with maximal identity %.2f"%(len(final_candidates),np.max(identities)))
+    print("Calculating using %d references with maximal identity %.2f"%(len(final),np.max(identities)))
     refDB={}
-    for item in final_candidates:
+    for item in final:
         refDB[item.target_name]=pd.read_csv(refDB_shifts_path+item.target_name+".csv")
-    candidate_shifts=[assign_aligned_shifts(candidate.source_seq,candidate.target_seq,candidate.target_name,refDB[candidate.target_name],strict) for candidate in final_candidates]
+    # changed candidate.source_seq->seq
+    candidate_shifts=[assign_aligned_shifts(seq,candidate.target_seq,candidate.target_name,refDB[candidate.target_name],strict) for candidate in final]
     if shifty:
         scores=[1]
     else:
-        scores=[candidate.TMscore for candidate in final_candidates]
+        scores=[candidate.TMscore*normalized_blast_scores[idx] for idx,candidate in enumerate(final)]
     seq_shifts=[]
     # Fix problems when the sequence read by Biopython is not the same as the sequence generated by mTM-align
-    mtm_recognized_seq=final_candidates[0].source_seq.replace("-","")
-    if mtm_recognized_seq!=str(seq):
+    mtm_recognized_seq=final[0].source_seq.replace("-","")
+    if not shifty and mtm_recognized_seq!=str(seq):
         biopython_seq,mtm_seq=Needleman_Wunsch_alignment(str(seq),mtm_recognized_seq)
         biopython_seq=list(biopython_seq)
         for i in range(len(mtm_seq)):
