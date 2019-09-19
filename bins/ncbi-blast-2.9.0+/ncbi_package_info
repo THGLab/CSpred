@@ -1,0 +1,238 @@
+PACKAGE_NAME: blast
+PACKAGE_VERSION: 2.9.0
+PACKAGE_SIGNATURE: ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+PACKAGE_CONFIG: Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+
+>>>>>  blastp
+
+blastp: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:07:04
+ Production-Version:  20190103
+
+
+
+>>>>>  blastn
+
+blastn: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:06:39
+ Production-Version:  20190103
+
+
+
+>>>>>  blastx
+
+blastx: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:07:13
+ Production-Version:  20190103
+
+
+
+>>>>>  tblastn
+
+tblastn: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:12:18
+ Production-Version:  20190103
+
+
+
+>>>>>  tblastx
+
+tblastx: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:12:21
+ Production-Version:  20190103
+
+
+
+>>>>>  psiblast
+
+psiblast: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:09:22
+ Production-Version:  20190103
+
+
+
+>>>>>  rpsblast
+
+rpsblast: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:10:36
+ Production-Version:  20190103
+
+
+
+>>>>>  rpstblastn
+
+rpstblastn: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:10:48
+ Production-Version:  20190103
+
+
+
+>>>>>  makembindex
+
+makembindex: 0.0.0
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:08:38
+ Production-Version:  20190103
+
+
+
+>>>>>  segmasker
+
+segmasker: 1.0.0
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:11:15
+ Production-Version:  20190103
+
+
+
+>>>>>  dustmasker
+
+dustmasker: 1.0.0
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:07:53
+ Production-Version:  20190103
+
+
+
+>>>>>  windowmasker
+
+windowmasker: 1.0.0
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:12:53
+ Production-Version:  20190103
+
+ window-masker-algorithm:1.0.0
+
+ windowmasker-statistics-algorithm-version:1.0.0
+
+ windowmasker-statistics-format-version:ascii 1.0.0
+
+ windowmasker-statistics-format-version:binary 1.0.0
+
+ windowmasker-statistics-format-version:oascii 1.0.0
+
+ windowmasker-statistics-format-version:obinary 1.0.0
+
+
+
+>>>>>  deltablast
+
+deltablast: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:07:44
+ Production-Version:  20190103
+
+
+
+>>>>>  makeblastdb
+
+makeblastdb: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:08:24
+ Production-Version:  20190103
+
+
+
+>>>>>  blastdbcmd
+
+blastdbcmd: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:05:56
+ Production-Version:  20190103
+
+
+
+>>>>>  blastdb_aliastool
+
+blastdb_aliastool: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:05:24
+ Production-Version:  20190103
+
+
+
+>>>>>  convert2blastmask
+
+convert2blastmask: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:07:32
+ Production-Version:  20190103
+
+
+
+>>>>>  blastdbcheck
+
+blastdbcheck: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:05:56
+ Production-Version:  20190103
+
+
+
+>>>>>  makeprofiledb
+
+makeprofiledb: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:08:39
+ Production-Version:  20190103
+
+
+
+>>>>>  blast_formatter
+
+blast_formatter: 2.9.0+
+ Package: blast 2.9.0, build Mar 11 2019 15:20:05
+ Package-Config:  Linux64-Centos : icc : ./c++/compilers/unix/ICC.sh --with-bin-release --with-strip --without-debug --without-pcre --with-mt --with-openmp --with-flat-makefile --with-experimental=Int8GI --without-vdb --without-gnutls --without-gcrypt --with-build-root-sfx=--Linux64-Centos-icc --with-flat-makefile --with-ncbi-public --without-ccache --without-caution --without-runpath --without-makefile-auto-update --with-projects=scripts/projects/blast/project.lst --with-internal
+ Build-Signature:  ICC_1503-ReleaseMT64--x86_64-unknown-linux3.10.0-gnu2.17-coremake22
+ Build-Date:  Mar 11 2019 16:04:29
+ Production-Version:  20190103
+
+
+
+

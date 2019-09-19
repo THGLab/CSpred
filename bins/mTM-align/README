@@ -1,0 +1,73 @@
+
+===============================================================================
+   This is a implementation of the multiple protein structure alignment 
+   program mTM-align algorithm in C/C++. 
+
+   DISCLAIMER:
+     Permission to use, copy, modify, and distribute this program for 
+     any purpose, with or without fee, is hereby granted, provided that
+     the notices on the head, the reference information, and this
+     copyright notice appear in all copies or substantial portions of 
+     the Software. It is provided "as is" without express or implied 
+     warranty.
+
+===============================================================================
+
+=========================
+ How to install mTM-align
+=========================
+To compile the program in your Linux computer, simply enter
+make
+
+or
+g++  -O3 -ffast-math -static -lm -o mTM-align main.cpp TMM.cpp UPGMA.cpp
+
+=====================
+ How to use TM-align
+=====================
+USAGE: ./mTM-align -i <input_list> [Options]
+ Options:
+   -i input_list   The input_list is an input file, listing the file names of the structures to be aligned.
+                   Each line represents the file name for one structure.
+                   Please note that each input structure should be a single-chain structure.
+
+   -o filename     The name of the file to save the superimposed structures. The default is 'result.pdb'
+                   When the number of input structures is >61, the superimposed structures will be separated by 'MODEL'
+                   Otherwise, the structures are speparated using the chain IDs: A,B,C,...
+
+
+  -v               Print the version of mTM-align
+  -h               Print this help information
+ Example usage:
+ ./mTM-align -i input_list
+ ./mTM-align -i input_list -o result.pdb
+
+
+Output:
+  result.fasta   	Multiple structure alignment in the fasta format.
+  result.pdb     	Superimposed structures, which can be shown by RasMol, PyMOL, Chimera and other softare.
+  cc.pdb		Superimposed structures in common core region, which can be shown by RasMol, PyMOL, Chimera and other software.
+  pairwise_TMscore.txt  Pairwise TM-score of structures.
+  pairwise_rmsd.txt     Pairwise RMSD of structures.
+  infile		Distance matrix, which can be used to generate phylogenetic tree by PHYLIP package.
+  *_pair.pdb		Pairwise superimposed structures.
+
+============================================
+ How to generate phylogenetic tree by PHYLIP
+============================================
+1.Download PHYLIP package from http://evolution.genetics.washington.edu/phylip/executables.html and install it.
+
+2.To construct the phylogenetic tree, simplely enter 
+phylip neighbor
+
+3.enter 'N' to choose UPGMA method, and then enter 'Y' to confirm.
+
+4.The phologenetic tree is shown in the file "outfile".
+
+=====================
+ Reference
+=====================
+Please kindly cite the following article if you use mTM-align in your work:
+
+R. Dong, Z. Peng, Y. Zhang, J. Yang, mTM-align: an algorithm for fast and accurate multiple protein
+structure alignment, Bioinformatics, 34: 1719-1725 (2018).
