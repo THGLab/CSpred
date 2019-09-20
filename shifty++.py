@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # This program executes both sequence-based alignment (using BLAST) and structure-based alignment (usint mTM-align) to find the best alignment for a specific pdb file with entities in the refDB database, and use the average chemical shifts from refDB to predict the chemical shifts for backbone H/C/N atom chemical shifts for the query protein
 
+# Author: Jie Li
+# Date created: Aug 21, 2019
+
 import Bio
 from Bio import PDB
 from Bio.Seq import Seq
@@ -12,23 +15,33 @@ import subprocess
 import os
 import shutil
 import sys
-sys.path.append("/data/jerry/NMR")
 import toolbox
 import pandas as pd
 import numpy as np
 import argparse
 
+SCRIPT_PATH=os.path.dirname(os.path.realpath(__file__))
+BLAST_DEFAULT_EXE=SCRIPT_PATH+"/bins/ncbi-blast-2.9.0+/bin/blastp"
+MTM_DEFAULT_EXE=SCRIPT_PATH+"/bins/mTM-align/mTM-align"
+os.environ["BLASTDB"]=SCRIPT_PATH+"/refDB/"  # Set the refDB position
+
 # Do checks beforehand to make sure the two alignment programs: BLAST and mTM-align are installed and configured correctly
-try:
-    check_result=subprocess.check_output(["which","blastp"])
-except:
-    check_result=""
-assert len(check_result)!=0,"Cannot find BLAST program! Please make sure BLAST is correctly configured."
-try:
-    check_result=subprocess.check_output(["which","mTM-align"])
-except:
-    check_result=""
-assert len(check_result)!=0,"Cannot find mTM-align program! Please make sure mTM-align is correctly configured."
+# try:
+#     check_result=subprocess.check_output(["which","blastp"])
+# except:
+#     check_result=""
+# assert len(check_result)!=0,"Cannot find BLAST program! Please make sure BLAST is correctly configured."
+# try:
+#     check_result=subprocess.check_output(["which","mTM-align"])
+# except:
+#     check_result=""
+# assert len(check_result)!=0,"Cannot find mTM-align program! Please make sure mTM-align is correctly configured."
+
+# Decompress refDB pdb files if they don't exist
+if not os.path.exists(SCRIPT_PATH+"/refDB/pdbs/"):
+    os.makedirs(SCRIPT_PATH+"/refDB/pdbs")
+    print("Decompressing mTM-align database...")
+    os.system("tar -xzf %s/refDB/pdbs.tgz -C %s/refDB/"%(SCRIPT_PATH,SCRIPT_PATH))
 
 # ================ Define Random Coils ======================
 # Wishart et al. in J-Bio NMR, 5 (1995) 67-81.
@@ -203,7 +216,8 @@ def blast(seq,db_name="refDB.blastdb",cleaning=True,return_aligned_seq=False):
         record=SeqRecord(seq,id="query",description="")
         with open(fasta_name,"w") as f:
             f.write(record.format("fasta"))
-    os.system("blastp -db %s -query %s -out %s"%(db_name,fasta_name,"blast/blast.out"))
+    cmd=BLAST_DEFAULT_EXE+" -db %s -query %s -out %s  > /dev/null 2>&1"%(db_name,fasta_name,"blast/blast.out")
+    os.system(cmd)
     results={}
     mode="ignore"
     for line in open("blast/blast.out"):
@@ -253,7 +267,7 @@ class mTM_align_result:
                 self.target_seq+=target_seq[i]
         self.coverage=len([i for i in range(len(self.source_seq)) if self.source_seq[i]==self.target_seq[i]])/len(self.source_seq)
 
-def mTM_align(source_file,alignment_candidates,db_path="/data/jerry/NMR/refDB/pdbs/",cleaning=True):
+def mTM_align(source_file,alignment_candidates,db_path=SCRIPT_PATH+"/refDB/pdbs/",cleaning=True):
     '''
     Execute a multiple structure alignment for the specified source file with the candidate alignment structures using the mTM-alignment algorithm
     source_file = file name of the PDB to be aligned with (type: str)
@@ -272,7 +286,8 @@ def mTM_align(source_file,alignment_candidates,db_path="/data/jerry/NMR/refDB/pd
         for candidate in alignment_candidates:
             f.write("%s.pdb\n"%candidate)
     os.chdir("mTM_align")
-    os.system("mTM-align -i inputs")
+    cmd=MTM_DEFAULT_EXE+" -i inputs"+" > /dev/null 2>&1"
+    os.system(cmd)
     results={candidate:mTM_align_result(candidate) for candidate in alignment_candidates}
     with open("pairwise_rmsd.txt") as f:
         title=f.readline() # Read the first line that is the title
