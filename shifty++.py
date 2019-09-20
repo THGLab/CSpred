@@ -20,6 +20,7 @@ import pandas as pd
 import numpy as np
 import argparse
 
+DEBUG=False
 SCRIPT_PATH=os.path.dirname(os.path.realpath(__file__))
 BLAST_DEFAULT_EXE=SCRIPT_PATH+"/bins/ncbi-blast-2.9.0+/bin/blastp"
 MTM_DEFAULT_EXE=SCRIPT_PATH+"/bins/mTM-align/mTM-align"
@@ -456,7 +457,7 @@ def assign_aligned_shifts(source_seq,target_seq,target_id,refDB,strict):
             results[i]={}
     return results
 
-def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast_score_threshold=0,e_value_threshold=1,long_Tmatch_threshold=40,short_Tmatch_threshold=20,long_match_percent_threshold=0.15,short_match_percent_threshold=0.4,TMscore_threshold=0.5,rmsd_threshold=2.8,coverage_threshold=0.3,refDB_shifts_path="/data/jerry/NMR/refDB/shifts_df/"):
+def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast_score_threshold=0,e_value_threshold=1,long_Tmatch_threshold=40,short_Tmatch_threshold=20,long_match_percent_threshold=0.15,short_match_percent_threshold=0.4,TMscore_threshold=0.5,rmsd_threshold=2.8,coverage_threshold=0.3,refDB_shifts_path=SCRIPT_PATH+"/refDB/shifts_df/"):
     '''
     The main function for calculating chemical shifts using shifty++
     strict = Strictness level of shift transfer (0 - Strict, 1 - Normal, 2 - Permissive)
@@ -480,7 +481,7 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
     '''
     fixname=os.path.basename(path).replace(".pdb","_fix.pdb")
     seq,resnum=chain_to_seq(read_sing_chain_PDB(path))
-    blast_result=blast(seq,db_name="train.blastdb" if test else "refDB.blastdb",return_aligned_seq=True) # Only the SHIFTY mode needs the aligned sequence
+    blast_result=blast(seq,db_name="train.blastdb" if test else "refDB.blastdb",return_aligned_seq=True,cleaning=not DEBUG) # Only the SHIFTY mode needs the aligned sequence
     candidates=[]
     for result in blast_result.values():
         if result.score>=blast_score_threshold and result.Evalue<=e_value_threshold:
@@ -525,10 +526,10 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
         # Do mTM alignment
         candidates=[item.target_name for item in candidates]
         if os.path.exists(fixname):
-            mtm_results=mTM_align(fixname,candidates)  
+            mtm_results=mTM_align(fixname,candidates,cleaning=not DEBUG)  
             os.remove(fixname)
         else:
-            mtm_results=mTM_align(path,candidates) 
+            mtm_results=mTM_align(path,candidates,cleaning=not DEBUG) 
         blast_scores=[]
         for result in mtm_results.values():
             if result.TMscore>TMscore_threshold and result.rmsd<rmsd_threshold and result.coverage>coverage_threshold:
