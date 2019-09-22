@@ -11,6 +11,7 @@ from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
 from Bio import Align
 from Bio.SubsMat.MatrixInfo import blosum62
+from save_pdb import PDBSaver
 import subprocess
 import os
 import shutil
@@ -117,10 +118,10 @@ def read_sing_chain_PDB(path,fix_unknown_res=True):
         if len(deletion)>0:
             for item in deletion:
                 chain.detach_child(item)
-        io=PDB.PDBIO()
-        io.set_structure(chain)
+        saver=PDBSaver()
+        saver.set_structure(chain)
         basename=os.path.basename(path)
-        io.save(basename.replace(".pdb","_fix.pdb"))
+        saver.save(basename.replace(".pdb","_fix.pdb"))
     return chain
 
 def chain_to_seq(chain,fasta_output=None,res_num=True):
