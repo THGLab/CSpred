@@ -74,7 +74,7 @@ def prepare_data_for_atom(data,atom):
     dat[ring_col] = dat[ring_col].fillna(value=0)
     return dat
 
-def calc_sing_pdb(pdb_file_name,pH=5,TP=True,ML=True):
+def calc_sing_pdb(pdb_file_name,pH=5,TP=True,ML=True,test=False):
     '''
     Function for calculating chemical shifts for a single PDB file using TP module / ML module / both
 
@@ -83,13 +83,14 @@ def calc_sing_pdb(pdb_file_name,pH=5,TP=True,ML=True):
         pH = pH value to be considered
         TP = Whether or not use TP module (Bool)
         ML = Whether or not use ML module (Bool)
+        test = Whether or not use test mode (Exclude mode for SHIFTY++, Bool)
     '''
     if pH<2 or pH>12:
         print("Warning! Predictions for proteins in extreme pH conditions are likely to be erroneous. Take prediction results at your own risk!")
     preds=pd.DataFrame()
     if TP:
         print("Calculating TP predictions ...")
-        TP_pred=shiftypp.main(pdb_file_name,1,secondary=True)
+        TP_pred=shiftypp.main(pdb_file_name,1,secondary=True,exclude=test)
         if not ML:
             # Prepare data when only doing TP prediction
             preds=TP_pred[["RESNUM","RESNAME"]]
@@ -155,10 +156,11 @@ if __name__=="__main__":
     args.add_argument("--tp_only","-tp",action="store_true",help="Only use the transfer prediction module. Equivalent to executing the SHIFTY++ program directly with default settings")
     args.add_argument("--ml_only","-ml",action="store_true",help="Only use the machine learning module. No alignment results will be utilized or calculated")
     args.add_argument("--pH","-pH","-ph",type=float,help="pH value to be considered. Default is 5",default=5)
+    args.add_argument("--test","-t",action="store_true",help="If toggled, using test mode for TP prediction")
     args=args.parse_args()
  
     if not args.batch:
-        preds=calc_sing_pdb(args.input,args.pH,not args.ml_only,not args.tp_only)
+        preds=calc_sing_pdb(args.input,args.pH,not args.ml_only,not args.tp_only,args.test)
         preds.to_csv(args.output,index=None)
         print("Complete!")
    

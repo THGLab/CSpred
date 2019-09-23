@@ -17,6 +17,8 @@ protein_dict_reverse={pair[1]:pair[0].upper() for pair in IUPACData.protein_lett
 
 RULER="0         1         2         3         4         5         6         7         8         9        10        11        12"
 ATOMS=["H","HA","C","CA","CB","N"]
+rmse=lambda x: np.sqrt(np.square(x).mean())
+
 
 def download_pdb(pdb_id,chain_id=None,destination=None):
     ssl._create_default_https_context = ssl._create_unverified_context

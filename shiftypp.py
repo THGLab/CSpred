@@ -93,10 +93,11 @@ randcoil_pro = {i: dict(zip(paper_order, rc_pro[i])) for i in toolbox.ATOMS}
 EXTERNAL_MAPPINGS = {"HIE":"HIS","HID":"HIS","HIP":"HIS","CAS":"CYS","CSD":"CYS","MSE":"MET","CSO":"CYS"}
 
 
-def read_sing_chain_PDB(path,fix_unknown_res=True):
+def read_sing_chain_PDB(path,fix_unknown_res=True,remove_alternate_res=True):
     '''
     Reads a pdb file from path and check whether it is single-chained. If true, return the chain object
     fix_unknown_res = whether or not change the residues with non-standard names into standard names using EXTERNAL_MAPPINGS
+    remove_duplicate_res = whether or not remove alternate residues (two residues at the same resnum position) in the chain
     '''
     parser=PDB.PDBParser()
     struc=parser.get_structure("query",path)
@@ -107,6 +108,7 @@ def read_sing_chain_PDB(path,fix_unknown_res=True):
     chain=struc.child_list[0]
     if fix_unknown_res:
         deletion=[]
+        existing_resnum=[]
         for i in range(len(chain.child_list)):
             if chain.child_list[i].resname in EXTERNAL_MAPPINGS:
                 print("Warning: residue %s[%d] is recognized as %s"%(chain.child_list[i].resname,chain.child_list[i].id[1],EXTERNAL_MAPPINGS[chain.child_list[i].resname]))
@@ -115,6 +117,12 @@ def read_sing_chain_PDB(path,fix_unknown_res=True):
                 # Removing the unrecognized residues
                 print("Warning: Unknown residue encountered: %s[%d]"%(chain.child_list[i].resname,chain.child_list[i].id[1]))
                 deletion.append(chain.child_list[i].id)
+            if remove_alternate_res:
+                if chain.child_list[i].id[1] in existing_resnum:
+                    print("Warning: residue %s[%d%s] ignored because it is an alternate residue"%(chain.child_list[i].resname,chain.child_list[i].id[1],chain.child_list[i].id[2]))
+                    deletion.append(chain.child_list[i].id)
+                else:
+                    existing_resnum.append(chain.child_list[i].id[1])
         if len(deletion)>0:
             for item in deletion:
                 chain.detach_child(item)
@@ -511,7 +519,11 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
         print("No sequence in database generates possible alignments")
         if os.path.exists(fixname):
             os.remove(fixname)
-        return df,[]
+        for atom in toolbox.ATOMS:
+            df[atom]=np.nan     
+        df["MAX_IDENTITY"]=0
+        df["AVG_IDENTITY"]=0
+        return df
     final=[]
     identities=[]
     if shifty:
@@ -554,7 +566,9 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
         for atom in toolbox.ATOMS:
             df[atom]=np.nan           
         print("No significant structure alignment is possible!")
-        return df,[]
+        df["MAX_IDENTITY"]=0
+        df["AVG_IDENTITY"]=0
+        return df
     print("Calculating using %d references with maximal identity %.2f"%(len(final),np.max(identities)))
     refDB={}
     for item in final:
