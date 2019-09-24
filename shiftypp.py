@@ -362,25 +362,33 @@ def Needleman_Wunsch_alignment(seq1,seq2):
         final1=aligned1
         final2=aligned2
     else:
-        final1=""
-        final2=""
+        # Assign alignment with "-"
+        final1_temp=""
+        final2_temp=""
         j=0
         for s in missing:
             if s:
-                final1+="-"
-                final2+="-"
+                final1_temp+="-"
+                final2_temp+="-"
             else:
                 while aligned1[j]=="-" and j<len(aligned1):
-                    final1+=aligned1[j]
-                    final2+=aligned2[j]
+                    final1_temp+=aligned1[j]
+                    final2_temp+=aligned2[j]
                     j+=1
                 if j<len(aligned1):
-                    final1+=aligned1[j]
-                    final2+=aligned2[j]
+                    final1_temp+=aligned1[j]
+                    final2_temp+=aligned2[j]
                     j+=1
         if j<len(aligned1):
-            final1+=aligned1[j:]
-            final2+=aligned2[j:]
+            final1_temp+=aligned1[j:]
+            final2_temp+=aligned2[j:]
+        # Cleaning up
+        final1=""
+        final2=""
+        for i in range(len(final1_temp)):
+            if not (final1_temp[i]=="-" and final2_temp[i]=="-"):
+                final1+=final1_temp[i]
+                final2+=final2_temp[i]
     return final1,final2
 
 
