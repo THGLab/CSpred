@@ -162,6 +162,23 @@ def get_pH(shift_file_path,default=5):
         # We assume that the pH value is the closest number to the word "pH"
         distances=[abs(pH_line.index(num)-pH_line.index("pH")) for num in candidate_numbers]
         return eval(candidate_numbers[argmin(distances)])
+
+def get_res(file):
+    with open(file) as f:
+        data=f.read()
+    regex=re.compile("RESOLUTION.*\d+\.\d+.*ANGSTROMS.")
+    resolution_line=regex.search(data)
+    if resolution_line is None:
+        return None
+    else:
+        resolution_line=resolution_line.group()
+    digit_re=re.compile("\d+\.\d+")
+    resolution=digit_re.search(resolution_line)
+    if resolution is None:
+        return None
+    else:
+        resolution=eval(resolution.group())
+    return resolution
     
 def get_free_gpu():
     gpu_stats = subprocess.check_output(["nvidia-smi", "--format=csv", "--query-gpu=memory.used,memory.free"])

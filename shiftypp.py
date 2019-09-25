@@ -204,7 +204,8 @@ class blast_result:
         Calculate coverage of a blast match. Because the source sequence from blast may be shorter than the real sequence, the total length of the real sequence must be provided.
         '''
         assert self.source_seq!="" and self.target_seq!=""
-        self.coverage=len([i for i in range(len(self.source_seq)) if self.source_seq[i]==self.target_seq[i]])/len_total
+        # self.coverage=len([i for i in range(len(self.source_seq)) if self.source_seq[i]==self.target_seq[i]])/len_total
+        self.coverage=self.Lmatch/max(self.Tmatch,len_total)
 
 
 def blast(seq,db_name="refDB.blastdb",cleaning=True,return_aligned_seq=False):
@@ -251,6 +252,8 @@ def blast(seq,db_name="refDB.blastdb",cleaning=True,return_aligned_seq=False):
                     results[mode].parse_seq(line,"source")
                 elif "Sbjct" in line and return_aligned_seq:
                     results[mode].parse_seq(line,"target")
+    for identifier in results:
+        results[identifier].calc_coverage(len(seq))
     if cleaning:
         shutil.rmtree("blast")
     return results
@@ -474,7 +477,7 @@ def assign_aligned_shifts(source_seq,target_seq,target_id,refDB,strict):
             results[i]={}
     return results
 
-def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast_score_threshold=0,e_value_threshold=1,long_Tmatch_threshold=40,short_Tmatch_threshold=20,long_match_percent_threshold=0.15,short_match_percent_threshold=0.4,TMscore_threshold=0.5,rmsd_threshold=2.8,coverage_threshold=0.3,refDB_shifts_path=SCRIPT_PATH+"/refDB/shifts_df/"):
+def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast_score_threshold=0,e_value_threshold=1e-10,long_Tmatch_threshold=40,short_Tmatch_threshold=20,long_match_percent_threshold=0.15,short_match_percent_threshold=0.4,TMscore_threshold=0.5,rmsd_threshold=2.8,coverage_threshold=0.3,refDB_shifts_path=SCRIPT_PATH+"/refDB/shifts_df/"):
     '''
     The main function for calculating chemical shifts using shifty++
     path = The path to the pdb file that need to be calculated (type: str)
@@ -508,14 +511,14 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
                 if not exclude:
                     candidates.append(result)
                 else:
-                    if not result.Lmatch/len(seq) > 0.99:
+                    if not result.coverage > 0.99:
                         candidates.append(result)
             elif result.Tmatch>=short_Tmatch_threshold and result.Lmatch/result.Tmatch>=short_match_percent_threshold:
                 # Short matches
                 if not exclude:
                     candidates.append(result)
                 else:
-                    if not result.Lmatch/len(seq) > 0.99:
+                    if not result.coverage > 0.99:
                         candidates.append(result)
                 
     if len(candidates)==0:
@@ -536,8 +539,6 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
     identities=[]
     if shifty:
         # In SHIFTY mode, do not do structural alignment
-        for i in range(len(candidates)):
-            candidates[i].calc_coverage(len(seq))
         best_match=np.argmax([item.score for item in candidates])
         final.append(candidates[best_match])
         identities.append(candidates[best_match].coverage)
@@ -554,17 +555,11 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
         blast_scores=[]
         for result in mtm_results.values():
             if result.TMscore>TMscore_threshold and result.rmsd<rmsd_threshold and result.coverage>coverage_threshold:
-                # Calculate identity based on alignment in refDB
-                blast_result[result.target_name].calc_coverage(len(seq))
                 identity=blast_result[result.target_name].coverage
-                # if exclude and (identity>0.99 or (result.coverage==1 and result.rmsd==0)):
-                if False: # Don't check based on structure
-                    pass
-                else:
-                    final.append(result)
-                    identities.append(identity)
-                    blast_scores.append(blast_result[result.target_name].score)
-        # Calculate normalized blast scores so that it can be considered together with 
+                final.append(result)
+                identities.append(identity)
+                blast_scores.append(blast_result[result.target_name].score)
+        # Calculate normalized blast scores so that it can be considered together with TM scores
         if len(blast_scores)>0:
             normalized_blast_scores=np.array(blast_scores)/np.max(blast_scores)
     if len(final)==0:
@@ -645,7 +640,7 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
     return result
 
 if __name__=="__main__":
-    args=argparse.ArgumentParser(description="This program executes both sequence-based alignment (using BLAST) and structure-based alignment (usint mTM-align) to find the best alignment for a specific pdb file with entities in the refDB database, and use the average chemical shifts from refDB to predict the chemical shifts for backbone H/C/N atom chemical shifts for the query protein")
+    args=argparse.ArgumentParser(description="This program executes both sequence-based alignment (using BLAST) and structure-based alignment (using mTM-align) to find the best alignment for a specific pdb file with entities in the refDB database, and use the average chemical shifts from refDB to predict the chemical shifts for backbone H/C/N atom chemical shifts for the query protein")
     args.add_argument("input",help="The query PDB file for which the shifts are calculated")
     args.add_argument("--output", "-o",help="Filename of generated output file. A file [shifts.csv] is generated by default",default="shifts.csv")
     args.add_argument("--strict","-s",help="Strict level of shift transfer:\n\t0 - Strict, only the exact matching residue shifts are transferred\n\t1 - Normal, transfer the shifts for residues that are the same or have positive substitution scores (from BLOSUM62)\n\t2 - Permissive, transfer all shifts regardless of the likeliness of substitution.",type=int,default=1)
