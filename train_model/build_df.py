@@ -8,7 +8,7 @@ import os
 import os.path
 import shutil
 import sys
-sys.path.append('/data/jerry/NMR')
+sys.path.append('../')
 import toolbox
 import pynmrstar
 import pandas as pd
@@ -26,6 +26,7 @@ WORKER_COUNT=12
 import random
 
 pynmrstar.ALLOW_V2_ENTRIES = True
+PDB_FOLDER="pdbs/"
 DATASET_FOLDER="../datasets/"
 
 atom_names = ['HA', 'H', 'CA', 'CB', 'C', 'N']
@@ -58,7 +59,7 @@ def get_shifts(file,format="talos"):
                 if 'pH' in line:
                     pH_line=line_num
             # Extract shifts
-            for line in yang_file.split('\n')[  :end_line]:
+            for line in yang_file.split('\n')[start_line:end_line]:
                 if len(line)==0:
                     continue
                 resid,resname,atomname,shift=line.split()
@@ -185,7 +186,7 @@ def build_spartap(seq_alignment_dict):
     for pdb_bmrb_id in seq_alignment_dict.keys():
         print('Processing SPARTA+ structure: '+pdb_bmrb_id)
         bmrbid,pdbid=pdb_bmrb_id.split(".")
-        pdb_single_chain_files=[item for item in "pdbs" if pdbid.lower() in item]
+        pdb_single_chain_files=[item for item in os.listdir(PDB_FOLDER+"train/") if pdbid in item]
         # Make sure there is only one match
         if len(pdb_single_chain_files)!=1:
             print("Unexpected file numbers for %s"%pdb_bmrb_id)
@@ -193,8 +194,8 @@ def build_spartap(seq_alignment_dict):
         else:
             pdb_single_chain_file=pdb_single_chain_files[0]
         shifts,pH=get_shifts("shifts/"+bmrbid+".tab")
-        df=build_single_chain_df("pdbs/"+pdb_single_chain_file,shifts,seq_alignment_dict[pdb_bmrb_id],pH=pH)
-        df.to_csv(DATASET_FOLDER+"datafiles/"+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv"))
+        df=build_single_chain_df(PDB_FOLDER+"train/"+pdb_single_chain_file,shifts,seq_alignment_dict[pdb_bmrb_id],pH=pH)
+        df.to_csv(DATASET_FOLDER+"train/"+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv"))
 
 def build_shiftx2(pdb_to_shift_dict):
     '''
@@ -203,7 +204,7 @@ def build_shiftx2(pdb_to_shift_dict):
     for pdbid in pdb_to_shift_dict:
         pid=pdbid[:4]
         print("Processing SHIFTX2 structure: "+pid)
-        pdb_single_chain_files=[item for item in "pdbs" if pid in item]
+        pdb_single_chain_files=[item for item in os.listdir(PDB_FOLDER+"train/") if pid in item]
         if len(pdb_single_chain_files)!=1:
             print("Ignored %s"%pid)
             continue
@@ -211,16 +212,19 @@ def build_shiftx2(pdb_to_shift_dict):
             pdb_single_chain_file=pdb_single_chain_files[0]
         shift_file=pdb_to_shift_dict[pdbid].split(".")[0]+".tab"
         shifts,pH=get_shifts("shifts/"+shift_file)
-        df=build_single_chain_df("pdbs/"+pdb_single_chain_file,shifts,pH=pH)
-        df.to_csv(DATASET_FOLDER+"datafiles/"+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv"))
+        df=build_single_chain_df(PDB_FOLDER+"train/"+pdb_single_chain_file,shifts,pH=pH)
+        df.to_csv(DATASET_FOLDER+"train/"+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv"))
 
 def build_refdb_test(pdb_bmr_dict):
+    '''
+    Generate feature-only dataframe files for test pdbs
+    '''
     for pdbid in pdb_bmr_dict:
         pid=pdbid[:4]
         print("Processing refDB testing structure: "+pid)
-        file_pos="/home/jerry/data/NMR/reference_software/tests/{0}/{0}_H.pdb".format(pid)
+        file_pos=PDB_FOLDER+"test/%s.pdb"%pdbid
         if os.path.exists(file_pos):
-            shift_pos="/home/jerry/data/NMR/refDB/shifts/bmr%d.str.corr"%pdb_bmr_dict[pdbid]
+            shift_pos="shifts/bmr%d.str.corr"%pdb_bmr_dict[pdbid]
             pH=toolbox.get_pH(shift_pos)
             try:
                 df=build_test_input(file_pos,pH)
@@ -228,7 +232,7 @@ def build_refdb_test(pdb_bmr_dict):
                 print(pid,e)
                 with open("error.log","a") as f:
                     f.write("%s\t%s\n"%(pid,e))
-            df.to_csv(WORKING_FOLDER+"/datafiles/"+pid+"_"+pdbid[4]+".csv")
+            df.to_csv(DATASET_FOLDER+"test/%s.csv"%pdbid)
         else:
             print("Cannot find",pid)
             continue
@@ -245,16 +249,16 @@ if __name__=="__main__":
     #############Parallel execute whole building
     pool=multiprocessing.Pool(processes=WORKER_COUNT)
 
-    pdb_bmr_dict_list = [dict() for i in range(WORKER_COUNT)]
-    worker_idx = 0
-    for sa_key in pdb_bmr_dict.keys():
-        pdb_bmr_dict_list[worker_idx][sa_key] = pdb_bmr_dict[sa_key]
-        if worker_idx==WORKER_COUNT-1:
-            worker_idx = 0
-        else:
-            worker_idx+=1
-    pool.map(build_refdb_test, pdb_bmr_dict_list)
-    print("Finishes refDB testing data")
+    # pdb_bmr_dict_list = [dict() for i in range(WORKER_COUNT)]
+    # worker_idx = 0
+    # for sa_key in pdb_bmr_dict.keys():
+    #     pdb_bmr_dict_list[worker_idx][sa_key] = pdb_bmr_dict[sa_key]
+    #     if worker_idx==WORKER_COUNT-1:
+    #         worker_idx = 0
+    #     else:
+    #         worker_idx+=1
+    # pool.map(build_refdb_test, pdb_bmr_dict_list)
+    # print("Finishes refDB testing data")
     
     seq_alignment_dict_list = [dict() for i in range(WORKER_COUNT)]
     seq_alignment_dict.pop('11013.3ERR')

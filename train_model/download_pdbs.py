@@ -13,13 +13,19 @@ import multiprocessing
 import math
 
 WORKER = 8
-DOWNLOAD_DIR = "pdbs"
+DOWNLOAD_DIR = "pdbs/"
 
-all_pdbs = pd.read_csv("all_training.csv")
+all_training_pdbs = pd.read_csv("all_training.csv")
+all_testing_pdbs = pd.read_csv("all_testing.csv")
+all_pdbs = pd.concat([all_training_pdbs , all_testing_pdbs] , ignore_index=True)
 
-# Make sure there is a folder to store all PDBS
+# Make sure there is a folder to store PDBS
 if not os.path.exists(DOWNLOAD_DIR):
     os.mkdir(DOWNLOAD_DIR)
+if not os.path.exists(DOWNLOAD_DIR + "train/"):
+    os.mkdir(DOWNLOAD_DIR + "train/")
+if not os.path.exists(DOWNLOAD_DIR + "test/"):
+    os.mkdir(DOWNLOAD_DIR + "test/")
 
 def download_range(idxes):
     '''
@@ -28,15 +34,30 @@ def download_range(idxes):
     for i in idxes:
         pdb_id = all_pdbs.loc[i , "PDB_ID"]
         chain = all_pdbs.loc[i , "chain_ID"]
-        toolbox.download_pdb(pdb_id , chain , "pdbs" , True)
+        # Do not download if file already exists
+        if not os.path.exists(DOWNLOAD_DIR + pdb_id + chain + ".pdb"):
+            toolbox.download_pdb(pdb_id , chain , DOWNLOAD_DIR , True)
 
 pool = multiprocessing.Pool(WORKER)
 chunk_length = math.ceil(len(all_pdbs) / WORKER)
 indices = [range(n * chunk_length , (n + 1) * chunk_length) for n in range(WORKER - 1)] + [range((WORKER - 1) * chunk_length , len(all_pdbs))]
 pool.map(download_range , indices)
 
-# Check downloaded file numbers
-if len(os.listdir(DOWNLOAD_DIR)) == len(all_pdbs):
-    print("All PDB files created!")
+# Move train PDBs and test PDBs into separate folders and check downloaded file numbers
+for i in range(len(all_training_pdbs)):
+    pdb_id = all_training_pdbs.loc[i , "PDB_ID"]
+    chain = all_training_pdbs.loc[i , "chain_ID"]
+    os.rename(DOWNLOAD_DIR + pdb_id + chain + ".pdb" , DOWNLOAD_DIR + "train/" + pdb_id + chain + ".pdb")
+if len(os.listdir(DOWNLOAD_DIR + "train/")) == len(all_training_pdbs):
+    print("All train PDB files created!")
 else:
-    print("Number check failed!")
+    print("Train PDB number check failed!")
+
+for i in range(len(all_testing_pdbs)):
+    pdb_id = all_testing_pdbs.loc[i , "PDB_ID"]
+    chain = all_testing_pdbs.loc[i , "chain_ID"]
+    os.rename(DOWNLOAD_DIR + pdb_id + chain + ".pdb" , DOWNLOAD_DIR + "test/" + pdb_id + chain + ".pdb")
+if len(os.listdir(DOWNLOAD_DIR + "test/")) == len(all_testing_pdbs):
+    print("All test PDB files created!")
+else:
+    print("Test PDB number check failed!")
