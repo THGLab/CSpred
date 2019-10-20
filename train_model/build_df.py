@@ -101,7 +101,7 @@ def get_shifts(file,format="talos"):
             shift_dict[res].pop("HN")
     return shift_dict,pH
 
-def build_single_chain_df(pdb_file_name,shift_dict,alignment=None,pH=5,rcfeats=True, hse=True, first_chain_only=False, sequence_columns=20,hbrad=[5.0]*3):
+def build_single_chain_df(pdb_file_name,shift_dict,alignment=None,pH=5,rcfeats=True, hse=True, first_chain_only=False, sequence_columns=0,hbrad=[5.0]*3):
     '''
         Function for building dataframe for pdb-shift combination.
         Returns a pandas dataframe for a specific single-chain pdb file.
@@ -193,6 +193,8 @@ def build_spartap(seq_alignment_dict):
             continue
         else:
             pdb_single_chain_file=pdb_single_chain_files[0]
+        if os.path.exists(DATASET_FOLDER+"train/"+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv")):
+            continue
         shifts,pH=get_shifts("shifts/"+bmrbid+".tab")
         df=build_single_chain_df(PDB_FOLDER+"train/"+pdb_single_chain_file,shifts,seq_alignment_dict[pdb_bmrb_id],pH=pH)
         df.to_csv(DATASET_FOLDER+"train/"+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv"))
@@ -202,7 +204,7 @@ def build_shiftx2(pdb_to_shift_dict):
     Generate all dataframe files for SHIFTX2 pdbs
     '''
     for pdbid in pdb_to_shift_dict:
-        pid=pdbid[:4]
+        pid=pdbid[:5]
         print("Processing SHIFTX2 structure: "+pid)
         pdb_single_chain_files=[item for item in os.listdir(PDB_FOLDER+"train/") if pid in item]
         if len(pdb_single_chain_files)!=1:
@@ -210,6 +212,8 @@ def build_shiftx2(pdb_to_shift_dict):
             continue
         else:
             pdb_single_chain_file=pdb_single_chain_files[0]
+        if os.path.exists(DATASET_FOLDER+"train/"+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv")):
+            continue
         shift_file=pdb_to_shift_dict[pdbid].split(".")[0]+".tab"
         shifts,pH=get_shifts("shifts/"+shift_file)
         df=build_single_chain_df(PDB_FOLDER+"train/"+pdb_single_chain_file,shifts,pH=pH)

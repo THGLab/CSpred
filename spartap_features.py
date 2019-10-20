@@ -965,7 +965,10 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
         data = []
         for model in structure:
             nn_tree = PDB.NeighborSearch(list(model.get_atoms()))
-            dssp = PDB.DSSP(model, fpath)
+            try:
+                dssp = PDB.DSSP(model, fpath)
+            except:
+                dssp = []
             if hse:
                 hseca_calc = PDB.HSExposureCA(model)
                 hsecb_calc = PDB.HSExposureCB(model)

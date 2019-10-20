@@ -10,6 +10,7 @@ import sys
 import pandas as pd
 from io import StringIO
 import ssl
+import subprocess
 
 protein_dict={pair[0].upper():pair[1] for pair in IUPACData.protein_letters_3to1.items()}
 protein_dict_reverse={pair[1]:pair[0].upper() for pair in IUPACData.protein_letters_3to1.items()}
@@ -18,9 +19,39 @@ protein_dict_reverse={pair[1]:pair[0].upper() for pair in IUPACData.protein_lett
 RULER="0         1         2         3         4         5         6         7         8         9        10        11        12"
 ATOMS=["H","HA","C","CA","CB","N"]
 rmse=lambda x: np.sqrt(np.square(x).mean())
+try:
+    check_result=subprocess.check_output(["which","reduce"])
+except:
+    check_result=""
+REDUCE_STATUS=len(check_result)!=0
+
+class PDBSaver:
+    '''
+    Self-defined function for writing a PDB file from Biopython chain object
+    '''
+    def __init__(self):
+        self.structure=None
+
+    def set_structure(self,structure):
+        self.structure=structure
+
+    def save(self,address):
+        if self.structure==None:
+            raise TypeError("Structure not set!")
+        else:
+            contents=[]
+            atom_counter=0
+            for residue in self.structure.get_residues():
+                for atom in residue.get_atoms():
+                    if atom.is_disordered():
+                        atom=atom.child_dict[sorted(atom.child_dict)[0]]
+                    atom_counter+=1
+                    contents.append("ATOM %6d  %-4s%3s %s%4d%1s   %8.3f%8.3f%8.3f  1.00%6.2f         %3s\n"%(atom_counter,atom.name,residue.resname,self.structure.id,residue.get_id()[1],residue.get_id()[2],atom.coord[0],atom.coord[1],atom.coord[2],atom.bfactor,atom.element))
+            with open(address,"w") as f:
+                f.writelines(contents)
 
 
-def download_pdb(pdb_id,chain_id=None,destination=None):
+def download_pdb(pdb_id,chain_id=None,destination=None,add_hydrogen=False):
     ssl._create_default_https_context = ssl._create_unverified_context
     try:
         data=urlopen("https://files.rcsb.org/download/%s.pdb"%pdb_id)
@@ -31,11 +62,14 @@ def download_pdb(pdb_id,chain_id=None,destination=None):
     for line in data:
         s.append(line.decode("utf-8"))
     if destination is None:
-        destination=os.getcwd()
-    filepath=destination+"/%s.pdb"%pdb_id
+        destination=os.getcwd()+"/"
+    if chain_id=="_":
+        filepath=destination+"%s_.pdb"%pdb_id
+    else:
+        filepath=destination+"%s.pdb"%pdb_id
     with open(filepath,"w") as f:
         f.writelines(s)
-    if chain_id!=None:
+    if chain_id not in {None,"_"}:
         parser=PDB.PDBParser()
         struc=parser.get_structure(pdb_id+chain_id,filepath)
         if len(struc)>1:
@@ -46,11 +80,15 @@ def download_pdb(pdb_id,chain_id=None,destination=None):
             print("Cannot find chain %s for PDB %s"%(chain_id,pdb_id))
             return False
         else:
-            io=PDB.PDBIO()
+            io=PDBSaver()
             io.set_structure(chains[0])
             os.remove(filepath)
-            filepath=destination+"/%s.pdb"%(pdb_id+chain_id)
+            filepath=destination+"%s.pdb"%(pdb_id+chain_id)
             io.save(filepath)
+    if add_hydrogen:
+        assert REDUCE_STATUS, "REDUCE is not correctly configured. Please make sure REDUCE is in your path. \nFor more information, please visit http://kinemage.biochem.duke.edu/software/reduce.php"
+        os.system("reduce %s > %s -Quiet"%(filepath,filepath+".H"))
+        os.rename(filepath+".H",filepath)
     print("PDB %s downloaded to %s"%(pdb_id,filepath))
     return True
     
