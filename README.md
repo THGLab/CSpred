@@ -20,6 +20,7 @@ Jie Li, Kochise C. Bennett, Yuchen Liu, Michael Martin and Teresa Head-Gordon
 * DSSP (2.04, https://swift.cmbi.umcn.nl/gv/dssp/)
 
 ## Usage
+Because the trained models are big, users are directed to [here]() to download all the saved model files. After downloading the models.tgz file, extract them into the 
 Users can use the trained model "as is" once they have correctly configured the python packages and external programs.
 The [`CSpred.py`](https://github.com/JerryJohnsonLee/CSpred/blob/master/CSpred.py) file is the entrance to UCB-ChemShift chemical shift predictor. <br>
 The easiest, out-of-the-box way of using UCBShift is running CSpred.py script directly on your desired protein. A [shifts.csv] file will be generated at the same position where you executed the script. The syntax will be something like this:

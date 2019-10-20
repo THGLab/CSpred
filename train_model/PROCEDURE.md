@@ -9,6 +9,7 @@
 ## 2 Download PDB files and hydrogenate
   Make sure you are in the [`train_model`]() folder.<br>
   Execute [`download_pdbs.py`]() to download all the single chain PDB files and add hydrogens for training and testing.<br>
+  You can choose whether or not include crystal waters and ligands in the structure, by setting the "RESIDUE_WHITELIST" keyword in [`download_pdbs.py`](). If you want all crystal waters and the protein, set whitelist as all amino acids and HOH. If you only want the protein, set whitelist as all amino acids. If you want anything contained in the RCSB structure, set whitelist to None.<br>
   You can specify the number of cores to use by changing the "WORKER" parameter in the script.
 
 ## 3 Generate data files for training UCBShift-X
