@@ -36,11 +36,9 @@ if not os.path.exists("shifts"):
     print("Extracting shift files...")
     os.system("tar -xzf shifts.tgz")
 
-# Make sure train and test folders exist
-if not os.path.exists(DATASET_FOLDER+"train"):
-    os.mkdir(DATASET_FOLDER+"train")
-if not os.path.exists(DATASET_FOLDER+"test"):
-    os.mkdir(DATASET_FOLDER+"test")
+# Make sure the folder for storing training datasets exist
+if not os.path.exists(DATASET_FOLDER):
+    os.mkdir(DATASET_FOLDER)
 
 
 def get_shifts(file,format="talos"):
@@ -197,7 +195,7 @@ def build_spartap(seq_alignment_dict):
             continue
         shifts,pH=get_shifts("shifts/"+bmrbid+".tab")
         df=build_single_chain_df(PDB_FOLDER+"train/"+pdb_single_chain_file,shifts,seq_alignment_dict[pdb_bmrb_id],pH=pH)
-        df.to_csv(DATASET_FOLDER+"train/"+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv"))
+        df.to_csv(DATASET_FOLDER+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv"))
 
 def build_shiftx2(pdb_to_shift_dict):
     '''
@@ -217,7 +215,7 @@ def build_shiftx2(pdb_to_shift_dict):
         shift_file=pdb_to_shift_dict[pdbid].split(".")[0]+".tab"
         shifts,pH=get_shifts("shifts/"+shift_file)
         df=build_single_chain_df(PDB_FOLDER+"train/"+pdb_single_chain_file,shifts,pH=pH)
-        df.to_csv(DATASET_FOLDER+"train/"+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv"))
+        df.to_csv(DATASET_FOLDER+os.path.basename(pdb_single_chain_file).replace(".pdb",".csv"))
 
 def build_refdb_test(pdb_bmr_dict):
     '''

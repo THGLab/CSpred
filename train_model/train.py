@@ -17,11 +17,11 @@ import toolbox
 from data_prep_functions import *
 
 K = 10
-DEBUG = False
+DEBUG = True
 rmse = lambda x: np.sqrt(np.mean(np.square(x)))
 
 MODEL_SAVE_PATH = "../models/"
-DATASET_PATH = "../datasets/train/"
+DATASET_PATH = "../datasets/"
 Y_PRED_PATH = "Y_preds/"
 
 def prep_feat_target(data,atom,task_type,filter_outlier=False,notnull=True):
