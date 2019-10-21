@@ -51,7 +51,7 @@ class PDBSaver:
                 f.writelines(contents)
 
 
-def download_pdb(pdb_id,chain_id=None,destination=None,add_hydrogen=False):
+def download_pdb(pdb_id,chain_id=None,destination=None,add_hydrogen=False,residue_whitelist=None):
     ssl._create_default_https_context = ssl._create_unverified_context
     try:
         data=urlopen("https://files.rcsb.org/download/%s.pdb"%pdb_id)
@@ -69,22 +69,37 @@ def download_pdb(pdb_id,chain_id=None,destination=None,add_hydrogen=False):
         filepath=destination+"%s.pdb"%pdb_id
     with open(filepath,"w") as f:
         f.writelines(s)
-    if chain_id not in {None,"_"}:
+    if chain_id not in {None,"_"} or residue_whitelist != None:
+        # Need post process after download
         parser=PDB.PDBParser()
         struc=parser.get_structure(pdb_id+chain_id,filepath)
-        if len(struc)>1:
-            print("Multiple structures found for %s, only the first structure is taken."%pdb_id)
-            struc=struc[0]
-        chains=[item for item in struc.get_chains() if item.id==chain_id]
-        if len(chains)!=1:
-            print("Cannot find chain %s for PDB %s"%(chain_id,pdb_id))
-            return False
+        if chain_id not in {None,"_"}:
+            # Get single chain PDB
+            if len(struc)>1:
+                print("Multiple structures found for %s, only the first structure is taken."%pdb_id)
+                struc=struc[0]
+            chains=[item for item in struc.get_chains() if item.id==chain_id]
+            if len(chains)!=1:
+                print("Cannot find chain %s for PDB %s"%(chain_id,pdb_id))
+                return False
+            else:
+                struc=chains[0]
         else:
-            io=PDBSaver()
-            io.set_structure(chains[0])
-            os.remove(filepath)
-            filepath=destination+"%s.pdb"%(pdb_id+chain_id)
-            io.save(filepath)
+            struc=struc[0].child_list[0]
+        if residue_whitelist:
+            # Save only whitelist residues
+            deletion=[]
+            for residue in struc.child_list:
+                if residue.resname not in residue_whitelist:
+                    deletion.append(residue.id)
+            for delete_id in deletion:
+                struc.detach_child(delete_id)
+
+        io=PDBSaver()
+        io.set_structure(struc)
+        os.remove(filepath)
+        filepath=destination+"%s.pdb"%(pdb_id+chain_id)
+        io.save(filepath)
     if add_hydrogen:
         assert REDUCE_STATUS, "REDUCE is not correctly configured. Please make sure REDUCE is in your path. \nFor more information, please visit http://kinemage.biochem.duke.edu/software/reduce.php"
         os.system("reduce %s > %s -Quiet"%(filepath,filepath+".H"))
