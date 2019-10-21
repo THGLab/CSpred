@@ -1031,7 +1031,10 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
                         print('KeyError at ' + str((chain.id, res.id)) + '.  Skipping this residue')
                         row_data += 16*[0]
                         continue
-
+                    except TypeError:
+                        print('DSSP failed on ' + str((chain.id, res.id)) + '.  Skipping this residue')
+                        row_data += 16*[0]
+                        continue
                     row_data += [rings[resnum][i] for i in ring_column_names]
                     row_data += [self.get_bfactor(res, atoms=bfact_mode)]
                     
