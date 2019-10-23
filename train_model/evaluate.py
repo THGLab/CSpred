@@ -52,8 +52,8 @@ def evaluate_final_pred(pdbid, pred_path, real_path):
             err = model_analysis[atom + "_PRED"] - model_analysis[atom]
             model_analysis[atom + "_DIFF"] = err
             model_err[atom + "_RMSE"] = toolbox.rmse(err)
-            model_err[atom + "_ERR_MIN"] = min(np.abs(err))
-            model_err[atom + "_ERR_MAX"] = max(np.abs(err))
+            model_err[atom + "_ERR_MIN"] = np.abs(err).min()
+            model_err[atom + "_ERR_MAX"] = np.abs(err).max()
         results.append((model_analysis, {pdbid: model_err}))
     return results
 
