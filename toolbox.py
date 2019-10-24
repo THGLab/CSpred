@@ -4,6 +4,7 @@ from urllib.request import urlopen
 import pickle
 import os
 import re
+import numpy as np
 from numpy import argmin
 import subprocess
 import sys
