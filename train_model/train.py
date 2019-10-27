@@ -45,7 +45,9 @@ def prep_feat_target(data,atom,task_type,filter_outlier=False,notnull=True):
         print("%d residues filtered because they exceeded 5 standard deviations"%np.sum(filtered))
     data.fillna(0,inplace=True)
     data=combine_shift(data,atom,Y_PRED_PATH) 
-    features = data.drop([atom,"FILE_ID","RESNAME","RES_NUM"], axis=1)
+    # Subtract random coils for SHIFTY predictions
+    data["SHIFTY_" + atom] = data["SHIFTY_" + atom] - data["RCOIL_" + atom]
+    features = data.drop([atom,"FILE_ID","RESNAME","RES_NUM","RCOIL_" + atom], axis=1)
     print("Shape of features:",features.shape)
     targets = data[atom]
     meta=data[["FILE_ID","RESNAME","RES_NUM"]]
@@ -54,6 +56,9 @@ def prep_feat_target(data,atom,task_type,filter_outlier=False,notnull=True):
 def data_preprocessing(data):
     '''
     Function for executing all the preprocessing steps based on the original extracted features, including fixing HA2/HA3 ring current ambiguity, adding hydrophobicity, powering features, drop unnecessary columns, etc.
+
+    returns:
+        data - the dataframe after preprocessing (pandas.DataFrame)
     '''
     data=data.copy()
     data = data.rename(index=str, columns=sparta_rename_map) 
@@ -61,17 +66,17 @@ def data_preprocessing(data):
     data=ha23ambigfix(data, mode=0)
     data=dihedral_purifier(data, drop_cols=True)
     data=dssp_purifier(data)
-    data=diff_targets(data,rings=False,coils=True)
+    data=diff_targets(data,rings=False,coils=True,drop_cols=False)
     Add_res_spec_feats(data,include_onehot=False)
     data=feat_pwr(data,hbondd_cols+cos_cols,[2])
     data=feat_pwr(data,hbondd_cols,[-1,-2,-3])
-    dropped_cols=dssp_pp_cols+dssp_energy_cols+['Unnamed: 0', 'Unnamed: 0.1', 'Unnamed: 0.1.1',  'PDB_FILE_NAME',"RES", 'CHAIN', 'RESNAME_ip1', 'RESNAME_im1', 'BMRB_RES_NUM', 'CG', 'RCI_S2', 'MATCHED_BMRB',"identifier"]+rcoil_cols+["RESNAME_i%s%d"%(a,b) for a in ['+','-'] for b in range(1,21)]
+    dropped_cols=dssp_pp_cols+dssp_energy_cols+['Unnamed: 0', 'Unnamed: 0.1', 'Unnamed: 0.1.1',  'PDB_FILE_NAME',"RES", 'CHAIN', 'RESNAME_ip1', 'RESNAME_im1', 'BMRB_RES_NUM', 'CG', 'RCI_S2', 'MATCHED_BMRB',"identifier"]+["RESNAME_i%s%d"%(a,b) for a in ['+','-'] for b in range(1,21)]
     data=data.drop(set(dropped_cols)&set(data.columns),axis=1)
     return data
 
 def prepare_data_for_atom(data,atom):
     '''
-    Function to generate features data for a given atom type: meaning that the irrelevant ring current values and chemical shifts targets for other atom types are removed from the dataset
+    Function to generate features data for a given atom type: meaning that the irrelevant ring current values, chemical shifts targets and random coil values for other atom types are removed from the dataset
 
     args:
         data - the dataset that contains all the features (pandas.DataFrame)
@@ -86,7 +91,8 @@ def prepare_data_for_atom(data,atom):
     rem1.remove(ring_col)
     rem2 = toolbox.ATOMS.copy()
     rem2.remove(atom)
-    dat = dat.drop(rem1+rem2, axis=1)
+    rem3 = ["RCOIL_" + rm_atom for rm_atom in toolbox.ATOMS if rm_atom != atom]
+    dat = dat.drop(rem1 + rem2 + rem3, axis=1)
     dat[ring_col] = dat[ring_col].fillna(value=0)
     return dat
 
@@ -166,13 +172,14 @@ def train_with_test(features,targets,train_idx,test_idx):
     first_pred=predictor.predict(test_feats).ravel()
     return first_pred
 
-def train_for_atom(atom,dataset):
+def train_for_atom(atom, dataset):
     '''
     Function for training machine learning models for a single atom
 
     args:
         atom = the atom that the models are trained for (str)
         dataset = the dataframe containing all the training data for all atoms (pandas.DataFrame)
+        rcoil_atom = random coil values for the specified atom type (pandas.Series)
     '''
     print("  ======  Training model for:",atom, "  ======  ")
     single_atom_data = prepare_data_for_atom(train_data, atom)

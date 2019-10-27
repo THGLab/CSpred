@@ -35,10 +35,10 @@ paper_order = [i.upper() for i in paper_order]
 #           for i in range(20)]
 
 rc_ala = {}
-rc_ala['N'] = [123.8, 118.7, 120.4, 120.2, 120.3, 108.8, 118.2, 119.9,
+rc_ala['N'] = [123.8, 118.8, 120.4, 120.2, 120.3, 108.8, 118.2, 119.9,
                120.4, 121.8, 119.6, 118.7, np.nan, 119.8, 120.5, 115.7,
                113.6, 119.2, 121.3, 120.3]
-rc_ala['H'] = [8.24, (8.32 + 8.43) / 2, 8.34, 8.42, 8.30, 8.33, 8.42, 8.00,
+rc_ala['H'] = [8.24, 8.32, 8.34, 8.42, 8.30, 8.33, 8.42, 8.00,
                8.29, 8.16, 8.28, 8.40, np.nan, 8.32, 8.23, 8.31, 8.15, 8.03,
                8.25, 8.12]
 rc_ala['HA'] = [4.32, 4.55, 4.71, 4.64, 4.35, 4.62, 3.96, 4.73, 4.17, 4.32,
@@ -47,10 +47,10 @@ rc_ala['HA'] = [4.32, 4.55, 4.71, 4.64, 4.35, 4.62, 3.96, 4.73, 4.17, 4.32,
 rc_ala['C'] = [177.8, 174.6, 176.3, 176.6, 175.8, 174.9, 174.1, 176.4, 176.6,
                177.6, 176.3, 175.2, 177.3, 176.0, 176.3, 174.6, 174.7, 176.3,
                176.1, 175.9]
-rc_ala['CA'] = [52.5, (58.2 + 55.4) / 2, 54.2, 56.6, 57.7, 45.1, 55.0, 61.1,
+rc_ala['CA'] = [52.5, 58.2, 54.2, 56.6, 57.7, 45.1, 55.0, 61.1,
                 56.2, 55.1, 55.4, 53.1, 63.3, 55.7, 56.0, 58.3, 61.8, 62.2,
                 57.5, 57.9]
-rc_ala['CB'] = [19.1, (28 + 41.1) / 2, 41.1, 29.9, 39.6, np.nan, 29, 38.8, 33.1,
+rc_ala['CB'] = [19.1, 28, 41.1, 29.9, 39.6, np.nan, 29, 38.8, 33.1,
                 42.4, 32.9, 38.9, 32.1, 29.4, 30.9, 63.8, 69.8, 32.9, 29.6,
                 38.8]
 randcoil_ala = {i: dict(zip(paper_order, rc_ala[i])) for i in atom_names}
@@ -72,6 +72,7 @@ rc_pro['CA'] = [50.5, 56.4, 52.2, 54.2, 55.6, 44.5, 53.3, 58.7, 54.2, 53.1,
 rc_pro['CB'] = [18.1, 27.1, 40.9, 29.2, 39.1, np.nan, 29.0, 38.7, 32.6, 41.7,
                 32.4, 38.7, 30.9, 28.8, 30.2, 63.3, 69.8, 32.6, 28.9, 38.3]
 randcoil_pro = {i: dict(zip(paper_order, rc_pro[i])) for i in atom_names}
+oxidized_cys_correction = {"H": 0.11, "HA": 0.16, "C": 0, "CA": -2.8, "CB": 13.1, "N": -0.2}
 
 secondary_struc_dict = dict(zip(['H', 'B', 'E', 'G', 'I', 'T', 'S', '-'], [list(np.identity(8)[i]) for i in range(8)]))
 max_asa_dict = dict(zip(paper_order, [121.0, 148.0, 187.0, 214.0, 228.0, 97.0, 216.0, 195.0, 230.0, 191.0, 203.0, 187.0, 154.0, 214.0, 265.0, 143.0, 163.0, 165.0, 264.0, 255.0]))
@@ -912,6 +913,37 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
         output = HAbond_Params + HNbond_Params + Obond_Params
         return output
 
+    def check_disulfide(self, nn_tree, res_obj):
+        '''
+        Find out the oxidation state of the cysdiene residue of interest. i.e. determing whether the cysdiene forms a disulfide bond with other residues
+
+        args:
+            nn_tree - A tree containing the distances between atoms in the set of interest (Bio.PDB.NeighborSearch)
+            res_obj - A CYS residue that we want to find out the oxidation state (Bio.PDB.Residue)
+
+        returns:
+            Bool - whether the CYS residue is oxidized or not
+        '''
+        try:
+            S_atom = res_obj["SG"]
+        except KeyError:
+            S_atom = None
+            for atom in res_obj.child_list:
+                if 'S' in atom.name:
+                    S_atom = atom
+                    break
+            if S_atom is None:
+                return False
+        nn_S = self.find_nearest_atom(nn_tree, S_atom, 2.5, atom_type='S')
+        if nn_S is None:
+            return False
+        else:
+            # Check whether the atom occurs in a residue more than 4 amino acid away
+            second_S_res_id = nn_S.parent.id[1]
+            if abs(second_S_res_id - res_obj.id[1]) >= 4:
+                return True
+            return False 
+
 
     def df_from_file_1res(self, fpath, hbrad=3*[5.0], ha_bond='restrictive', efilt=False, efilter_O2=True, s2rad=10.0, hse=True, first_chain_only=False, bfact_mode='all', sequence_columns=0):
 
@@ -961,7 +993,7 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
         if sequence_columns > 0:
             seq_match_cols = ['RESNAME_i-' + str(i) for i in range(sequence_columns, 0, -1)] + ['RESNAME_i+' + str(i) for i in range(1, sequence_columns+1)]
             col_names += seq_match_cols
-
+        col_names += ["CYS_OX"]
         data = []
         for model in structure:
             nn_tree = PDB.NeighborSearch(list(model.get_atoms()))
@@ -1041,7 +1073,11 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
                     if sequence_columns > 0:
                         central_res_idx = res_dict[res.get_id()] + sequence_columns # Obtain index of central residue, accounting for the 'NONE' padding of list_of_resnames
                         row_data += list_of_resnames[central_res_idx - sequence_columns : central_res_idx] + list_of_resnames[central_res_idx+1 : central_res_idx + 1 + sequence_columns]
-
+                    if resname == "CYS":
+                        # Check oxidation state of cysdiene (whether there are disulfide bonds)
+                        row_data += [self.check_disulfide(nn_tree, res)]
+                    else:
+                        row_data += [False]
                     data.append(row_data)
                 if first_chain_only:
                     break
@@ -1207,6 +1243,12 @@ class PDB_SPARTAp_DataReader(BaseDataReader):
                         rccs = [randcoil_pro[j][resname] for j in atom_names]
                     else:
                         rccs = [randcoil_ala[j][resname] for j in atom_names]
+                    if df_1res.loc[i, 'CYS_OX']:
+                        if res_next == 'PRO':
+                            print("Warning! Oxidized cys found preceding PRO!")
+                            # Assume that next residue cannot be proline
+                        for idx,j in enumerate(atom_names):
+                            rccs[idx] += oxidized_cys_correction[j]
                     df.loc[i, col_rccs] = rccs
                 if hse:
                     df.loc[i, col_hse] = hse_prev + list(df_1res.loc[i, hse_names].values) + hse_next

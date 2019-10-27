@@ -90,7 +90,7 @@ def calc_sing_pdb(pdb_file_name,pH=5,TP=True,TP_pred=None,ML=True,test=False):
     if TP:
         if TP_pred is None:
             print("Calculating UCBShift-Y predictions ...")
-            TP_pred = ucbshifty.main(pdb_file_name, 1, secondary=True, exclude=test)
+            TP_pred = ucbshifty.main(pdb_file_name, 1, exclude=test)
         if not ML:
             # Prepare data when only doing TP prediction
             preds = TP_pred[["RESNUM","RESNAME"]]
@@ -132,8 +132,10 @@ def calc_sing_pdb(pdb_file_name,pH=5,TP=True,TP_pred=None,ML=True,test=False):
                 tp_atom = TP_pred[["RESNAME", "RESNUM", atom, "MAX_IDENTITY", "AVG_IDENTITY"]]
                 feats_r2 = pd.merge(feats_r2, tp_atom, on="RESNUM", suffixes=("","_TP"), how="left")
                 # Write TP predictions
-                result[atom+"_Y"] = feats_r2[atom].values + rcoils["RCOIL_"+atom].values
+                result[atom+"_Y"] = feats_r2[atom].values
                 valid = (feats_r2.RESNAME == feats_r2.RESNAME_TP) & (feats_r2[atom].notnull())
+                # Subtract random coils to make secondary TP shifts
+                feats_r2[atom] -= rcoils["RCOIL_"+atom].values
                 feats_r2["R0_PRED"] = r0_pred
                 valid_feats_r2 = feats_r2.drop(["RESNAME","RESNUM","RESNAME_TP"], axis=1)[valid]
                 r2_pred = r1_pred.copy()
@@ -178,7 +180,7 @@ if __name__ == "__main__":
         TP_preds = []
         print("Calculating UCBShift-Y predictions ...")
         for item in inputs:
-            TP_preds.append(ucbshifty.main(item[0], 1, secondary=True, exclude=args.test))
+            TP_preds.append(ucbshifty.main(item[0], 1, exclude=args.test))
         
         # Prepare parameter lists for parallel computing UCBShift-X predictions
         params = []

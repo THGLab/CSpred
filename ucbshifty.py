@@ -22,6 +22,7 @@ import numpy as np
 import argparse
 
 DEBUG=False
+GLOBAL_TEST_CUTOFF=0.99
 SCRIPT_PATH=os.path.dirname(os.path.realpath(__file__))
 BLAST_DEFAULT_EXE=SCRIPT_PATH+"/bins/ncbi-blast-2.9.0+/bin/blastp"
 MTM_DEFAULT_EXE=SCRIPT_PATH+"/bins/mTM-align/mTM-align"
@@ -92,6 +93,7 @@ randcoil_pro = {i: dict(zip(paper_order, rc_pro[i])) for i in toolbox.ATOMS}
 
 EXTERNAL_MAPPINGS = {"HIE":"HIS","HID":"HIS","HIP":"HIS","CAS":"CYS","CSD":"CYS","MSE":"MET","CSO":"CYS"}
 
+SS_CAPS = {"H": 3.7, "HA": 3, "C": 10, "CA": 11.25, "CB": 20, "N": 22}
 
 def read_sing_chain_PDB(path,fix_unknown_res=True,remove_alternate_res=True):
     '''
@@ -511,14 +513,14 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
                 if not exclude:
                     candidates.append(result)
                 else:
-                    if not result.coverage > 0.99:
+                    if not result.coverage > GLOBAL_TEST_CUTOFF:
                         candidates.append(result)
             elif result.Tmatch>=short_Tmatch_threshold and result.Lmatch/result.Tmatch>=short_match_percent_threshold:
                 # Short matches
                 if not exclude:
                     candidates.append(result)
                 else:
-                    if not result.coverage > 0.99:
+                    if not result.coverage > GLOBAL_TEST_CUTOFF:
                         candidates.append(result)
                 
     if len(candidates)==0:
@@ -617,6 +619,9 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
             if len(shifts)>0:
                 # calculate weighted average for the specific residue based on mTM alignment scores and BLOSUM numbers
                 rc_diff=np.sum(np.array(shifts)*np.array(res_scores))/np.sum(res_scores)
+                # capping rc_diff to prevent making crazy errors due to bad database records
+                rc_diff = min(rc_diff, SS_CAPS[atom])
+                rc_diff = max(rc_diff, -SS_CAPS[atom])
                 if next_pro:
                     if secondary:
                         residue_shifts[atom]=rc_diff
