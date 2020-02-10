@@ -129,10 +129,13 @@ def calc_sing_pdb(pdb_file_name,pH=5,TP=True,TP_pred=None,ML=True,test=False):
                 feats_r2 = atom_feats.copy()
                 feats_r2["RESNAME"] = resnames
                 feats_r2["RESNUM"] = resnums
-                tp_atom = TP_pred[["RESNAME", "RESNUM", atom, "MAX_IDENTITY", "AVG_IDENTITY"]]
+                tp_atom = TP_pred[["RESNAME", "RESNUM", atom, atom+"_BEST_REF_SCORE", atom+"_BEST_REF_COV", atom+"_BEST_REF_MATCH"]]
                 feats_r2 = pd.merge(feats_r2, tp_atom, on="RESNUM", suffixes=("","_TP"), how="left")
                 # Write TP predictions
                 result[atom+"_Y"] = feats_r2[atom].values
+                result[atom+"_BEST_REF_SCORE"] = feats_r2[atom+"_BEST_REF_SCORE"].values
+                result[atom+"_BEST_REF_COV"] = feats_r2[atom+"_BEST_REF_COV"].values
+                result[atom+"_BEST_REF_MATCH"] = feats_r2[atom+"_BEST_REF_MATCH"].values
                 valid = (feats_r2.RESNAME == feats_r2.RESNAME_TP) & (feats_r2[atom].notnull())
                 # Subtract random coils to make secondary TP shifts
                 feats_r2[atom] -= rcoils["RCOIL_"+atom].values
@@ -176,18 +179,7 @@ if __name__ == "__main__":
                 else:
                     line_content[-1] = float(line_content[-1])
                 inputs.append(line_content)
-        # Generate TP predictions first because they cannot be parallelled
-        TP_preds = []
-        print("Calculating UCBShift-Y predictions ...")
-        for item in inputs:
-            TP_preds.append(ucbshifty.main(item[0], 1, exclude=args.test))
-        
-        # Prepare parameter lists for parallel computing UCBShift-X predictions
-        params = []
-        for single_input, single_TP_pred in zip(inputs, TP_preds):
-            params.append([single_input[0], single_input[1], not args.shiftx_only, single_TP_pred, not args.shifty_only, args.test])
-        pool = multiprocessing.Pool(args.worker)
-        all_preds = pool.starmap(calc_sing_pdb, params)   
+        # Decide saving folder
         if args.output == "shifts.csv":
             # No specific output path specified. Store all files in the current folder
             SAVE_PREFIX = ""
@@ -195,7 +187,11 @@ if __name__ == "__main__":
             SAVE_PREFIX = args.output
             if SAVE_PREFIX[-1] != "/":
                 SAVE_PREFIX = SAVE_PREFIX + "/"
-        for single_input, single_pred in zip(inputs, all_preds):
-            single_pred.to_csv(SAVE_PREFIX + os.path.basename(single_input[0]).replace(".pdb", ".csv"), index=None)
+
+        for idx, item in enumerate(inputs):
+            preds = calc_sing_pdb(item[0], item[1], TP=not args.shiftx_only, ML=not args.shifty_only, test=args.test)
+            preds.to_csv(SAVE_PREFIX + os.path.basename(item[0]).replace(".pdb", ".csv"), index=None)
+            print("Finished prediction for %s (%d/%d)" % (item[0], idx + 1, len(inputs)))    
+    
     print("Complete!")
    

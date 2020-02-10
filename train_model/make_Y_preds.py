@@ -15,7 +15,7 @@ if not os.path.exists(PRED_FOLDER):
     os.mkdir(PRED_FOLDER)
 
 for pdb in os.listdir(PDB_FOLDER + "train/"):
-    result = ucbshifty.main(PDB_FOLDER + "train/" + pdb, strict=1, secondary=True, exclude=True) # Exact matches will be excluded in order to reflect more realistic scenarios 
+    result = ucbshifty.main(PDB_FOLDER + "train/" + pdb, strict=1, secondary=False, exclude=True) # Exact matches will be excluded in order to reflect more realistic scenarios 
     result.to_csv(PRED_FOLDER + pdb.replace(".pdb", ".csv"), index=None)
 
 print("Finished generating predictions for training.")
