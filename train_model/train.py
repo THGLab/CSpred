@@ -17,7 +17,8 @@ import toolbox
 from data_prep_functions import *
 
 K = 10
-DEBUG = True
+PARALLEL_JOBS = 12
+DEBUG = False
 rmse = lambda x: np.sqrt(np.mean(np.square(x)))
 
 MODEL_SAVE_PATH = "../models/"
@@ -132,8 +133,9 @@ def combine_shift(df,atom,shift_pred_path):
             # Only combine SHIFTY++ predictions when there is exactly one match
             print("Unexpected number of shift files for %s:%d"%(pdbid,len(shift_pred_file)))
             pdb_df["SHIFTY_"+atom]=np.nan
-            pdb_df["MAX_IDENTITY"]=0
-            pdb_df["AVG_IDENTITY"]=0
+            pdb_df["BEST_REF_SCORE_"+atom]=0
+            pdb_df["BEST_REF_COV_"+atom]=0
+            pdb_df["BEST_REF_MATCH_"+atom]=0
             new_df_singles.append(pdb_df)
             continue
         else:
@@ -141,8 +143,14 @@ def combine_shift(df,atom,shift_pred_path):
         shift_single_df=shifts[["RESNAME"]].copy()
         shift_single_df["RES_NUM"]=shifts.RESNUM
         shift_single_df["SHIFTY_"+atom]=shifts[atom]
-        shift_single_df["MAX_IDENTITY"]=shifts.MAX_IDENTITY
-        shift_single_df["AVG_IDENTITY"]=shifts.AVG_IDENTITY
+        if atom+"_BEST_REF_SCORE" in shifts.columns:
+            shift_single_df["BEST_REF_SCORE_"+atom]=shifts[atom+"_BEST_REF_SCORE"]
+            shift_single_df["BEST_REF_COV_"+atom]=shifts[atom+"_BEST_REF_COV"]
+            shift_single_df["BEST_REF_MATCH_"+atom]=shifts[atom+"_BEST_REF_MATCH"]
+        else:
+            shift_single_df["BEST_REF_SCORE_"+atom]=0
+            shift_single_df["BEST_REF_COV_"+atom]=0
+            shift_single_df["BEST_REF_MATCH_"+atom]=0
         merged_df=pd.merge(pdb_df,shift_single_df,on="RES_NUM",how="left",suffixes=("","1"))
         if not (merged_df["RESNAME"]==merged_df["RESNAME1"]).all():
             merged_df[(merged_df["RESNAME"]!=merged_df["RESNAME1"])]["SHIFTY_"+atom]=np.nan
@@ -186,10 +194,10 @@ def train_for_atom(atom, dataset):
     features,targets,metas = prep_feat_target(single_atom_data,atom,"train",filter_outlier=True,notnull=True)
     kf=KFold(n_splits=K,shuffle=True)
     # Prepare parameters for Kfold in a list and do "out-of-sample" training and testing on training dataset for K folds
-    print("Training R0...")
+    print("Training R0 to provide OOB predictions as features for R1 and R2...")
     params=[]
     for train_idx,test_idx in kf.split(range(len(features))):
-        params.append([features.drop(["SHIFTY_"+atom,"MAX_IDENTITY","AVG_IDENTITY"],axis=1),targets,train_idx,test_idx])
+        params.append([features.drop(["SHIFTY_"+atom,"BEST_REF_SCORE_"+atom,"BEST_REF_COV_"+atom,"BEST_REF_MATCH_"+atom],axis=1),targets,train_idx,test_idx])
     pool=multiprocessing.Pool(processes=K)
     first_preds=pool.starmap(train_with_test,params)
     # first_preds=train_with_test(*params[0])
@@ -205,8 +213,11 @@ def train_for_atom(atom, dataset):
     evaluate(first_preds.sort_index(),targets,metas)
 
     # Retrain the model on all training data
-    R0=ExtraTreesRegressor(bootstrap=False, max_features=0.3, min_samples_leaf=3, min_samples_split=15, n_estimators=500)
-    R0.fit(features.drop(["SHIFTY_"+atom,"MAX_IDENTITY","AVG_IDENTITY","FIRST_PRED"],axis=1),targets.values.ravel())
+    print("Retraining R0 with all data...")
+    R0=ExtraTreesRegressor(bootstrap=False, max_features=0.3, min_samples_leaf=3, min_samples_split=15, n_estimators=500,n_jobs = PARALLEL_JOBS)
+    R0_x=features.drop(["SHIFTY_"+atom,"BEST_REF_SCORE_"+atom,"BEST_REF_COV_"+atom,"BEST_REF_MATCH_"+atom,"FIRST_PRED"],axis=1).values
+    R0_y=targets.values.ravel()
+    R0.fit(R0_x,R0_y)
 
 
     # Save first level model (R0)
@@ -215,23 +226,30 @@ def train_for_atom(atom, dataset):
 
     # Train and save second level model  (R1)
     print("Training UCBShift-X with %d examples..."%len(features))
-    R1=RandomForestRegressor(bootstrap=False, max_features=0.5, min_samples_leaf=7, min_samples_split=12, n_estimators=500)
-    R1.fit(features.drop(["SHIFTY_"+atom,"MAX_IDENTITY","AVG_IDENTITY"],axis=1),targets.values.ravel())
+    R1=RandomForestRegressor(bootstrap=False, max_features=0.5, min_samples_leaf=7, min_samples_split=12, n_estimators=500,n_jobs = PARALLEL_JOBS)
+    R1_x=features.drop(["SHIFTY_"+atom,"BEST_REF_SCORE_"+atom,"BEST_REF_COV_"+atom,"BEST_REF_MATCH_"+atom],axis=1).values
+    R1_y=targets.values.ravel()
+    R1.fit(R1_x,R1_y)
     if not DEBUG:
         joblib.dump(R1,MODEL_SAVE_PATH+"%s_R1.sav"%atom)
 
     # Train and save second level model with UCBShift-Y predictions (R2)
-    R2=RandomForestRegressor(bootstrap=False, max_features=0.5, min_samples_leaf=7, min_samples_split=12, n_estimators=500)
+    R2=RandomForestRegressor(bootstrap=False, max_features=0.5, min_samples_leaf=7, min_samples_split=12, n_estimators=500,n_jobs = PARALLEL_JOBS)
     not_null_idx=features["SHIFTY_"+atom].notnull()
 
     print("Training combined UCBShift model with X and Y parts with %d examples..."%np.sum(not_null_idx))
-    R2.fit(features[not_null_idx],targets[not_null_idx].values.ravel())
+    
+    R2_x=features[not_null_idx].values
+    R2_y=targets[not_null_idx].values.ravel()
+    R2.fit(R2_x,R2_y)
     if not DEBUG:
         joblib.dump(R2,MODEL_SAVE_PATH+"%s_R2.sav"%atom)
 
     print("Finish for",atom)
 
 if __name__=="__main__":
+    if not os.path.exists(MODEL_SAVE_PATH):
+        os.mkdir(MODEL_SAVE_PATH)
     print("  ======  Reading all datasets  ======  ")
     train_data = pd.concat([pd.read_csv(DATASET_PATH+single_df) for single_df in os.listdir(DATASET_PATH)],ignore_index=True)
     train_data = data_preprocessing(train_data)

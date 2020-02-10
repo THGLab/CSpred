@@ -479,7 +479,7 @@ def assign_aligned_shifts(source_seq,target_seq,target_id,refDB,strict):
             results[i]={}
     return results
 
-def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast_score_threshold=0,e_value_threshold=1e-10,long_Tmatch_threshold=40,short_Tmatch_threshold=20,long_match_percent_threshold=0.15,short_match_percent_threshold=0.4,TMscore_threshold=0.5,rmsd_threshold=2.8,coverage_threshold=0.3,refDB_shifts_path=SCRIPT_PATH+"/refDB/shifts_df/"):
+def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast_score_threshold=0,e_value_threshold=1e-10,long_Tmatch_threshold=40,short_Tmatch_threshold=20,long_match_percent_threshold=0.15,short_match_percent_threshold=0.4,TMscore_threshold=0.8,rmsd_threshold=1.75,coverage_threshold=0.3,refDB_shifts_path=SCRIPT_PATH+"/refDB/shifts_df/"):
     '''
     The main function for calculating chemical shifts using shifty++
     path = The path to the pdb file that need to be calculated (type: str)
@@ -534,8 +534,9 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
             os.remove(fixname)
         for atom in toolbox.ATOMS:
             df[atom]=np.nan     
-        df["MAX_IDENTITY"]=0
-        df["AVG_IDENTITY"]=0
+            df[atom+"_BEST_REF_SCORE"]=0
+            df[atom+"_BEST_REF_COV"]=0
+            df[atom+"_BEST_REF_MATCH"]=0
         return df
     final=[]
     identities=[]
@@ -568,11 +569,12 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
         residues=toolbox.decode_seq(seq)
         result_dict={"RESNAME":residues,"RESNUM":resnum}
         df=pd.DataFrame(result_dict)
+        print("No significant structure alignment is possible!")
         for atom in toolbox.ATOMS:
             df[atom]=np.nan           
-        print("No significant structure alignment is possible!")
-        df["MAX_IDENTITY"]=0
-        df["AVG_IDENTITY"]=0
+            df[atom+"_BEST_REF_SCORE"]=0
+            df[atom+"_BEST_REF_COV"]=0
+            df[atom+"_BEST_REF_MATCH"]=0
         return df
     print("Calculating using %d references with maximal identity %.2f"%(len(final),np.max(identities)))
     refDB={}
@@ -609,13 +611,20 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
             if seq[i+1]=="P": # the next residue in the query protein is proline
                 next_pro=True
         residue_shifts={}
+        residue_shifts["RESNAME"]=resname
+        residue_shifts["RESNUM"]=resnum[i]
         for atom in toolbox.ATOMS:
             shifts=[]
+            reference_scores=[]
             res_scores=[] # probably need to do some non-linear conversion of the scores
             for candidate_shift,score in zip(candidate_shifts,scores):
                 if atom in candidate_shift[i] and not np.isnan(candidate_shift[i][atom]):
                     shifts.append(candidate_shift[i][atom])
-                    res_scores.append(np.exp(score*5)*np.exp(get_blosum_value(candidate_shift[i]["SOURCE_RESNAME"],candidate_shift[i]["TARGET_RESNAME"])))
+                    target_score=np.exp(score*5)*np.exp(get_blosum_value(candidate_shift[i]["SOURCE_RESNAME"],candidate_shift[i]["TARGET_RESNAME"]))
+                    res_scores.append(target_score)
+                    reference_scores.append(target_score)
+                else:
+                    reference_scores.append(0)
             if len(shifts)>0:
                 # calculate weighted average for the specific residue based on mTM alignment scores and BLOSUM numbers
                 rc_diff=np.sum(np.array(shifts)*np.array(res_scores))/np.sum(res_scores)
@@ -636,12 +645,18 @@ def main(path,strict,secondary=False,test=False,exclude=False,shifty=False,blast
                         residue_shifts[atom]=rc_diff+randcoil_ala[atom][resname]
             else:
                 residue_shifts[atom]=np.nan
-        residue_shifts["RESNAME"]=resname
-        residue_shifts["RESNUM"]=resnum[i]
+            max_ref = np.argmax(reference_scores)
+            if reference_scores[max_ref]>0:
+                residue_shifts[atom+"_BEST_REF_SCORE"]=final[max_ref].TMscore * np.exp(-final[max_ref].rmsd) 
+                residue_shifts[atom+"_BEST_REF_COV"]=min(final[max_ref].coverage,identities[max_ref])
+                residue_shifts[atom+"_BEST_REF_MATCH"]=int(candidate_shifts[max_ref][i]["SOURCE_RESNAME"] == candidate_shifts[max_ref][i]["TARGET_RESNAME"])
+            else:
+                residue_shifts[atom+"_BEST_REF_SCORE"]=0
+                residue_shifts[atom+"_BEST_REF_COV"]=0
+                residue_shifts[atom+"_BEST_REF_MATCH"]=0
         seq_shifts.append(residue_shifts)
-        result=pd.DataFrame(seq_shifts)
-        result["MAX_IDENTITY"]=np.max(identities) if len(identities)>0 else 0
-        result["AVG_IDENTITY"]=np.average(identities) if len(identities)>0 else 0
+    result=pd.DataFrame(seq_shifts)
+    # result=result[["RESNUM", "RESNAME"] + toolbox.ATOMS + ["MAX_IDENTITY", "AVG_IDENTITY"]]
     return result
 
 if __name__=="__main__":
