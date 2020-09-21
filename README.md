@@ -2,8 +2,8 @@
 
 UCBShift is a program for predicting chemical shifts for backbone atoms and β-carbon of a protein in solution. The program implements two mechanisms:  a transfer prediction module that employs both sequence alignment and structure alignment to select references for shift replication; and an ensemble decision tree based machine learning module which takes features extracted from a PDB file and makes trustful chemical shift predictions. When combined together, this new predictor achieves state-of-the-art accuracy for predicting chemical shifts in a "real-world" dataset, with root-mean-square errors of  0.38, 0.22, 1.31, 0.97, 1.29 and 2.16 ppm between prediction and experimental values for H, Hα, C, Cα, Cβ and N.
 
-## Authors
-Jie Li, Kochise C. Bennett, Yuchen Liu, Michael Martin and Teresa Head-Gordon
+## Publication
+Li, J., Bennett, K. C., Liu, Y., Martin, M. V., & Head-Gordon, T. (2020). Accurate prediction of chemical shifts for aqueous protein structure on “Real World” data. _Chemical Science_, 11(12), 3180-3191. DOI: [10.1039/C9SC06561J](https://pubs.rsc.org/en/content/articlehtml/2020/sc/c9sc06561j)
 
 ## Software package requirements
 ### Python and python packages
