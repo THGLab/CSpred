@@ -11,7 +11,7 @@ Li, J., Bennett, K. C., Liu, Y., Martin, M. V., & Head-Gordon, T. (2020). Accura
 * Numpy 
 * Pandas
 * scikit learn (https://scikit-learn.org/stable/)
-* Biopython (https://biopython.org/)
+* Biopython (1.74, https://biopython.org/)
 * Joblib (https://joblib.readthedocs.io/en/latest/)
 
 ###  External programs needed
