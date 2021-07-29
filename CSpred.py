@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Script for making predictions using both the X module and the Y module
 
 # Author: Jie Li
@@ -14,6 +14,10 @@ import pandas as pd
 import argparse
 import multiprocessing
 # import warnings
+import sys
+if sys.version_info.major < 3 or sys.version_info.major == 3 and sys.version_info.minor < 5:
+    raise ValueError("Python >= 3.5 required")
+
 
 # Suppress Setting With Copy warnings
 pd.options.mode.chained_assignment = None
@@ -84,6 +88,8 @@ def calc_sing_pdb(pdb_file_name,pH=5,TP=True,TP_pred=None,ML=True,test=False):
         ML = Whether or not use ML module (Bool)
         test = Whether or not use test mode (Exclude mode for SHIFTY++, Bool)
     '''
+    if not os.path.isdir(ML_MODEL_PATH):
+        raise ValueError("models not installed in {}".format(ML_MODEL_PATH))
     if pH < 2 or pH > 12:
         print("Warning! Predictions for proteins in extreme pH conditions are likely to be erroneous. Take prediction results at your own risk!")
     preds = pd.DataFrame()
@@ -163,7 +169,12 @@ if __name__ == "__main__":
     args.add_argument("--shiftx_only", "-x", "-X", action="store_true", help="Only use UCBShift-X (machine learning) module. No alignment results will be utilized or calculated")
     args.add_argument("--pH", "-pH", "-ph", type=float, help="pH value to be considered. Default is 5", default=5)
     args.add_argument("--test", "-t", action="store_true", help="If toggled, use test mode for UCBShift-Y prediction")
+    args.add_argument("--models", help="Alternate location for models directory")
     args = args.parse_args()
+    if args.models:
+        if not os.path.isdir(args.models):
+            raise ValueError("Directory {} specified by models does not exists".format(args.models))
+        ML_MODEL_PATH = args.models
  
     if not args.batch:
         preds = calc_sing_pdb(args.input, args.pH, TP=not args.shiftx_only, ML=not args.shifty_only, test=args.test)
