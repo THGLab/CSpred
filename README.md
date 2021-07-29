@@ -13,6 +13,7 @@ Li, J., Bennett, K. C., Liu, Y., Martin, M. V., & Head-Gordon, T. (2020). Accura
 * scikit learn (https://scikit-learn.org/stable/)
 * Biopython (1.74, https://biopython.org/)
 * Joblib (https://joblib.readthedocs.io/en/latest/)
+* matplotlib
 
 ###  External programs needed
 * blast (2.9.0, https://blast.ncbi.nlm.nih.gov/Blast.cgi?CMD=Web&PAGE_TYPE=BlastDocs&DOC_TYPE=Download)
