@@ -24,8 +24,6 @@ pd.options.mode.chained_assignment = None
 
 SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))
 ML_MODEL_PATH = SCRIPT_PATH + "/models/"
-if not os.path.isdir(ML_MODEL_PATH):
-    raise ValueError("models not installed in {}".format(ML_MODEL_PATH))
 
 def build_input(pdb_file_name, pH=5, rcfeats=True, hse=True, hbrad=[5.0] * 3):
     '''
@@ -90,6 +88,8 @@ def calc_sing_pdb(pdb_file_name,pH=5,TP=True,TP_pred=None,ML=True,test=False):
         ML = Whether or not use ML module (Bool)
         test = Whether or not use test mode (Exclude mode for SHIFTY++, Bool)
     '''
+    if not os.path.isdir(ML_MODEL_PATH):
+        raise ValueError("models not installed in {}".format(ML_MODEL_PATH))
     if pH < 2 or pH > 12:
         print("Warning! Predictions for proteins in extreme pH conditions are likely to be erroneous. Take prediction results at your own risk!")
     preds = pd.DataFrame()
