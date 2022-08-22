@@ -96,7 +96,9 @@ def calc_sing_pdb(pdb_file_name,pH=5,TP=True,TP_pred=None,ML=True,test=False):
     if TP:
         if TP_pred is None:
             print("Calculating UCBShift-Y predictions ...")
-            TP_pred = ucbshifty.main(pdb_file_name, 1, exclude=test)
+            # generate hash string from pdb file name
+            hashed_file_name = str(hash(pdb_file_name) % ((sys.maxsize + 1) * 2)) + '/'
+            TP_pred = ucbshifty.main(pdb_file_name, 1, exclude=test, custom_working_dir=hashed_file_name)
         if not ML:
             # Prepare data when only doing TP prediction
             preds = TP_pred[["RESNUM","RESNAME"]]
