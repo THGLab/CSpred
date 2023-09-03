@@ -5,6 +5,9 @@ UCBShift is a program for predicting chemical shifts for backbone atoms and β-c
 ## Publication
 Li, J., Bennett, K. C., Liu, Y., Martin, M. V., & Head-Gordon, T. (2020). Accurate prediction of chemical shifts for aqueous protein structure on “Real World” data. _Chemical Science_, 11(12), 3180-3191. DOI: [10.1039/C9SC06561J](https://pubs.rsc.org/en/content/articlehtml/2020/sc/c9sc06561j)
 
+## Using UCBShift through NMRBox
+We recommend users run UCBShift through NMRBox, which provides out-of-box using experience for UCBShift in their virtual machines. You can sign up for NMRBox here: https://nmrbox.nmrhub.org/
+
 ## Software package requirements
 ### Python and python packages
 * Python (>=3.5)
