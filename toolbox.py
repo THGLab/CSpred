@@ -18,13 +18,23 @@ protein_dict_reverse={pair[1]:pair[0].upper() for pair in IUPACData.protein_lett
 
 
 RULER="0         1         2         3         4         5         6         7         8         9        10        11        12"
-ATOMS=["H","HA","C","CA","CB","N"]
+ATOMS = ['C', 'CA', 'CB', 'CD', 'CD1', 'CD2', 'CE', 'CE1', 'CE3', 'CE2', 'CG', 'CG1', 'CG2', 'CH2', 'CZ', 'CZ2', 'CZ3', 'H', 'HA', 'HB', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE3', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HH2', 'HZ', 'HZ2', 'HZ3', 'N', 'ND2', 'NE1', 'NE2']
+
+AMINOACIDS = ['ALA', 'CYS', 'ASP', 'GLU', 'PHE', 'GLY', 'HIS', 'ILE', 'LYS', 'LEU', 'MET', 'ASN', 'PRO', 'GLN', 'ARG', 'SER', 'THR', 'VAL', 'TRP', 'TYR']
+
+
+mae = lambda x: np.abs(x).mean()
 rmse=lambda x: np.sqrt(np.square(x).mean())
 try:
     check_result=subprocess.check_output(["which","reduce"])
 except:
     check_result=""
 REDUCE_STATUS=len(check_result)!=0
+
+
+def is_heteroatom(residue):
+    return residue.id[0].isspace() and residue.id[2] != 'HOH'
+
 
 class PDBSaver:
     '''
@@ -47,9 +57,13 @@ class PDBSaver:
                     if atom.is_disordered():
                         atom=atom.child_dict[sorted(atom.child_dict)[0]]
                     atom_counter+=1
-                    contents.append("ATOM %6d  %-4s%3s %s%4d%1s   %8.3f%8.3f%8.3f  1.00%6.2f         %3s\n"%(atom_counter,atom.name,residue.resname,self.structure.id,residue.get_id()[1],residue.get_id()[2],atom.coord[0],atom.coord[1],atom.coord[2],atom.bfactor,atom.element))
+                    if is_heteroatom(residue):
+                        contents.append("ATOM %6d  %-4s%3s %s%4d%1s   %8.3f%8.3f%8.3f  1.00%6.2f         %3s\n"%(atom_counter,atom.name,residue.resname,self.structure.id,residue.get_id()[1],residue.get_id()[2],atom.coord[0],atom.coord[1],atom.coord[2],atom.bfactor,atom.element))
+                    else:
+                        contents.append("HETATM %4d  %-4s%3s %s%4d%1s   %8.3f%8.3f%8.3f  1.00%6.2f         %3s\n"%(atom_counter,atom.name,residue.resname,self.structure.id,residue.get_id()[1],residue.get_id()[2],atom.coord[0],atom.coord[1],atom.coord[2],atom.bfactor,atom.element))
             with open(address,"w") as f:
                 f.writelines(contents)
+
 
 
 def download_pdb(pdb_id,chain_id=None,destination=None,add_hydrogen=False,residue_whitelist=None):
@@ -103,10 +117,46 @@ def download_pdb(pdb_id,chain_id=None,destination=None,add_hydrogen=False,residu
         io.save(filepath)
     if add_hydrogen:
         assert REDUCE_STATUS, "REDUCE is not correctly configured. Please make sure REDUCE is in your path. \nFor more information, please visit http://kinemage.biochem.duke.edu/software/reduce.php"
-        os.system("reduce %s > %s -Quiet"%(filepath,filepath+".H"))
+        os.system("reduce -build %s > %s -Quiet"%(filepath,filepath+".H"))
         os.rename(filepath+".H",filepath)
     print("PDB %s downloaded to %s"%(pdb_id,filepath))
     return True
+    
+    
+    
+    
+def propka_prot(filepath,pH=5):
+
+    pH_pattern = r'^[0-9]+(\.[0-9]+)?$'
+
+    #if re.match(pH_pattern, pH):
+    #os.system("pdb2pqr30 --nodebump --keep-protons --ff=AMBER --titration-state-method=propka --quiet --with-ph %s --pdb-output %s %s %s"%(pH,filepath+".H",filepath,filepath+".remove"))
+    if (pH <= 14) and (pH > 0):
+        os.system("pdb2pqr30 --nodebump --ff=AMBER --titration-state-method=propka --quiet --log-level ERROR  --with-ph %s --pdb-output %s %s %s"%(pH,filepath+".H",filepath,filepath+".remove"))
+    else:
+        print('pH not provided')
+        os.system("pdb2pqr30 --nodebump --ff=AMBER --quiet --log-level ERROR --pdb-output %s %s %s"%(filepath+".H",filepath,filepath+".remove"))
+
+    try:
+        os.rename(filepath+".H",filepath)
+    except:
+        print("Protonation failed")
+
+    #else:
+    #os.system("pdb2pqr30 --nodebump --keep-protons --noopt --ff=AMBER --titration-state-method=propka --with-ph 7 %s %s"%(filepath,filepath+".H"))
+    #os.rename(filepath+".H",filepath)
+    print("PDB re-protonated to %s"%(filepath))
+    return True
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
 
 def fetch_seq(pdb_id,chain_id=None):

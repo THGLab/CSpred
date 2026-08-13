@@ -16,7 +16,7 @@ from Bio.SeqUtils import IUPACData
 
 # First define some prelimnary things
 
-atom_names = ['HA', 'H', 'CA', 'CB', 'C', 'N']
+atom_names = ['C', 'CA', 'CB', 'CD', 'CD1', 'CD2', 'CE', 'CE1', 'CE3', 'CE2', 'CG', 'CG1', 'CG2', 'CH2', 'CZ', 'CZ2', 'CZ3', 'H', 'HA', 'HB', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE3', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HH2', 'HZ', 'HZ2', 'HZ3', 'N', 'ND2', 'NE1', 'NE2']
 sparta_results = [0.25, 0.49, 0.94, 1.14, 1.09, 2.45] # Advertised performance of SPARTA+
 paper_order = ['Ala', 'Cys','Asp','Glu','Phe','Gly','His','Ile','Lys','Leu','Met','Asn','Pro','Gln','Arg','Ser','Thr','Val','Trp','Tyr'] # The amino acid order used in Sparta+ data and blosum matrix (1-letter alphabetic).
 
@@ -30,14 +30,13 @@ hydrophobic_dict={'LYS': 1.81, 'GLN': 0.19, 'THR': 0.11, 'ASP': 0.5, 'GLU': 0.12
 col_phipsi = [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i-1', 'SIN_i-1']]
 col_phipsi += [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i', 'SIN_i']]
 col_phipsi += [i+j for i in ['PHI_', 'PSI_'] for j in ['COS_i+1', 'SIN_i+1']]
-col_chi = [i+j+k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_', 'CHI2_'] for j in ['COS', 'SIN', 'EXISTS']]
+col_chi = [i+j+k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_'] for j in ['COS', 'SIN', 'EXISTS']]
 col_hbprev = ['O_'+i+'_i-1' for i in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
 col_hbond = [i+j+'_i' for i in ['Ha_', 'HN_', 'O_'] for j in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
 col_hbnext = ['HN_'+i+'_i+1' for i in ['d_HA', '_COS_H', '_COS_A', '_EXISTS']]
 col_s2 = ['S2'+i for i in ['_i-1', '_i', '_i+1']]
 struc_cols = col_phipsi + col_chi + col_hbprev + col_hbond + col_hbnext + col_s2
 blosum_names = ['BLOSUM62_NUM_'+paper_order[i].upper() for i in range(20)]
-#blosum_names = ['BLOSUM62_NUM_'+sorted(IUPACData.protein_letters_3to1.keys())[i].upper() for i in range(20)]
 col_blosum = [blosum_names[i]+j for j in ['_i-1', '_i', '_i+1'] for i in range(20)]
 seq_cols = col_blosum
 bin_seq_cols = ['BINSEQREP_'+ sorted(IUPACData.protein_letters_3to1.keys())[i].upper() + j for j in ['_i-1', '_i', '_i+1'] for i in range(20)]
@@ -76,20 +75,20 @@ sx2_rename_map = dict(zip(sparta_ring_cols + sx2_rcoil_cols, ring_cols + rcoil_c
 # Define the names for the original Sparta+ Data Columns (same set as above but different order so we can assign column labels to data obtained directly from Yang)
 orig_cols = col_blosum[:20]
 orig_cols += [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i-1', 'COS_i-1']]
-orig_cols += [i + j + '_i-1' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+orig_cols += [i + j + '_i-1' for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_'] for j in ['SIN', 'COS', 'EXISTS']]
 orig_cols += col_blosum[20:40]
 orig_cols += [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i', 'COS_i']]
-orig_cols += [i + j + '_i' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+orig_cols += [i + j + '_i' for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_'] for j in ['SIN', 'COS', 'EXISTS']]
 orig_cols += col_blosum[40:]
 orig_cols += [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i+1', 'COS_i+1']]
-orig_cols += [i + j + '_i+1' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+orig_cols += [i + j + '_i+1' for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_'] for j in ['SIN', 'COS', 'EXISTS']]
 orig_cols += ['O_'+i+'_i-1' for i in ['_EXISTS', 'd_HA', '_COS_A', '_COS_H']]
 orig_cols += [i+j+'_i' for i in ['HN_', 'Ha_', 'O_'] for j in ['_EXISTS', 'd_HA', '_COS_A', '_COS_H']]
 orig_cols += ['HN_'+i+'_i+1' for i in ['_EXISTS', 'd_HA', '_COS_A', '_COS_H']]
 orig_cols += ['S2'+i for i in ['_i-1', '_i', '_i+1']]
 
 # These are the names of the boolean columns in the Sparta+ features that indicate existance of chi1/chi2 angles as well as possible hydrogen bonds
-exist_cols = [i + 'EXISTS' + k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_', 'CHI2_']]
+exist_cols = [i + 'EXISTS' + k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_']]
 exist_cols += ['O_'+ '_EXISTS' +'_i-1', 'HN_' + '_EXISTS' + '_i+1']
 exist_cols += [i + '_EXISTS' + '_i' for i in ['Ha_', 'HN_', 'O_']]
 # For completeness, here are the remaining columns
@@ -99,17 +98,17 @@ for x in exist_cols:
 
 # These columns are multiplied by 10 in the original Sparta+ data
 x10cols = [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i-1', 'COS_i-1']]
-x10cols += [i + j + '_i-1' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+x10cols += [i + j + '_i-1' for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_'] for j in ['SIN', 'COS', 'EXISTS']]
 x10cols += [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i', 'COS_i']]
-x10cols += [i + j + '_i' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+x10cols += [i + j + '_i' for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_'] for j in ['SIN', 'COS', 'EXISTS']]
 x10cols += [i + j for i in ['PHI_', 'PSI_'] for j in ['SIN_i+1', 'COS_i+1']]
-x10cols += [i + j + '_i+1' for i in ['CHI1_', 'CHI2_'] for j in ['SIN', 'COS', 'EXISTS']]
+x10cols += [i + j + '_i+1' for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_'] for j in ['SIN', 'COS', 'EXISTS']]
 
 # Make separate lists of cosine, sine, distance columns
 phipsicos_cols = [i + 'COS_i-1' for i in ['PHI_', 'PSI_']]
 phipsicos_cols += [i + 'COS_i' for i in ['PHI_', 'PSI_']]
 phipsicos_cols += [i + 'COS_i+1' for i in ['PHI_', 'PSI_']]
-chicos_cols = [i + 'COS' + k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_', 'CHI2_']]
+chicos_cols = [i + 'COS' + k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_']]
 hbondcos_cols = ['O_'+i+'_i-1' for i in ['_COS_H', '_COS_A']]
 hbondcos_cols += [i+j+'_i' for i in ['Ha_', 'HN_', 'O_'] for j in ['_COS_H', '_COS_A']]
 hbondcos_cols += ['HN_'+i+'_i+1' for i in ['_COS_H', '_COS_A']]
@@ -117,12 +116,14 @@ cos_cols = phipsicos_cols + chicos_cols + hbondcos_cols
 phipsisin_cols = [i + 'SIN_i-1' for i in ['PHI_', 'PSI_']]
 phipsisin_cols += [i + 'SIN_i' for i in ['PHI_', 'PSI_']]
 phipsisin_cols += [i + 'SIN_i-1' for i in ['PHI_', 'PSI_']]
-chisin_cols = [i + 'SIN' + k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_', 'CHI2_']]
+chisin_cols = [i + 'SIN' + k for k in ['_i-1', '_i', '_i+1'] for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_']]
 sin_cols = phipsisin_cols + chisin_cols
 # And a list for columns containing distance information
 hbondd_cols = ['O_d_HA_i-1']
 hbondd_cols += [i+'d_HA_i' for i in ['Ha_', 'HN_', 'O_']]
 hbondd_cols += ['HN_d_HA_i+1']
+hbondd_sidechain_cols = [i+j for i in ['HB', 'HB1', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ','HD11', 'HD12', 'HD13', 'HD23', 'HE3','HZ3','HH2','HZ2', 'HZ1', 'HG21', 'HG22', 'HG23']  for j in ['_dHA', '_COS_H', '_COS_A']]
+
 
 # Need a list of columns that will be subject to noise if we wish to use noise injection
 angle_cols = cos_cols + sin_cols
@@ -143,8 +144,8 @@ col_names_pown3 = [x + '^-3.0' for x in cols_pown3]
 # Define the names for the _i+1 and _i-1 columns to allow dropping them for RNNs
 im1_cols = ['PSI_'+i for i in ['COS_i-1', 'SIN_i-1']]
 ip1_cols = ['PHI_'+i for i in ['COS_i+1', 'SIN_i+1']]
-im1_cols += [i+j+'_i-1' for i in ['CHI1_', 'CHI2_'] for j in ['COS', 'SIN', 'EXISTS']]
-ip1_cols += [i+j+'_i+1' for i in ['CHI1_', 'CHI2_'] for j in ['COS', 'SIN', 'EXISTS']]
+im1_cols += [i+j+'_i-1' for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_'] for j in ['COS', 'SIN', 'EXISTS']]
+ip1_cols += [i+j+'_i+1' for i in ['CHI1_','ALTCHI1_', 'CHI2_','ALTCHI2_', 'CHI3_', 'CHI4_', 'CHI5_'] for j in ['COS', 'SIN', 'EXISTS']]
 im1_cols += col_hbprev
 ip1_cols += col_hbnext
 im1_cols += ['S2_i-1']
@@ -162,23 +163,30 @@ sp_feat_cols=['BLOSUM62_NUM_ALA_i-1', 'BLOSUM62_NUM_CYS_i-1', 'BLOSUM62_NUM_ASP_
 'BLOSUM62_NUM_GLY_i-1', 'BLOSUM62_NUM_HIS_i-1', 'BLOSUM62_NUM_ILE_i-1', 'BLOSUM62_NUM_LYS_i-1', 'BLOSUM62_NUM_LEU_i-1', 'BLOSUM62_NUM_MET_i-1', 
 'BLOSUM62_NUM_ASN_i-1', 'BLOSUM62_NUM_PRO_i-1', 'BLOSUM62_NUM_GLN_i-1', 'BLOSUM62_NUM_ARG_i-1', 'BLOSUM62_NUM_SER_i-1', 'BLOSUM62_NUM_THR_i-1', 
 'BLOSUM62_NUM_VAL_i-1', 'BLOSUM62_NUM_TRP_i-1', 'BLOSUM62_NUM_TYR_i-1', 'PHI_SIN_i-1', 'PHI_COS_i-1', 'PSI_SIN_i-1', 'PSI_COS_i-1', 'CHI1_SIN_i-1',
- 'CHI1_COS_i-1', 'CHI1_EXISTS_i-1', 'CHI2_SIN_i-1', 'CHI2_COS_i-1', 'CHI2_EXISTS_i-1', 'BLOSUM62_NUM_ALA_i', 'BLOSUM62_NUM_CYS_i', 'BLOSUM62_NUM_ASP_i',
+ 'CHI1_COS_i-1', 'CHI1_EXISTS_i-1', 'ALTCHI1_SIN_i-1', 'ALTCHI1_COS_i-1', 'ALTCHI1_EXISTS_i-1', 
+ 'CHI2_SIN_i-1', 'CHI2_COS_i-1', 'CHI2_EXISTS_i-1', 'ALTCHI2_SIN_i-1', 'ALTCHI2_COS_i-1', 'ALTCHI2_EXISTS_i-1', 'CHI3_SIN_i-1', 'CHI3_COS_i-1', 'CHI3_EXISTS_i-1', 
+ 'CHI4_SIN_i-1', 'CHI4_COS_i-1', 'CHI4_EXISTS_i-1', 'CHI5_SIN_i-1', 'CHI5_COS_i-1', 'CHI5_EXISTS_i-1'
+ 'BLOSUM62_NUM_ALA_i', 'BLOSUM62_NUM_CYS_i', 'BLOSUM62_NUM_ASP_i',
  'BLOSUM62_NUM_GLU_i', 'BLOSUM62_NUM_PHE_i', 'BLOSUM62_NUM_GLY_i', 'BLOSUM62_NUM_HIS_i', 'BLOSUM62_NUM_ILE_i', 'BLOSUM62_NUM_LYS_i', 'BLOSUM62_NUM_LEU_i',
  'BLOSUM62_NUM_MET_i', 'BLOSUM62_NUM_ASN_i', 'BLOSUM62_NUM_PRO_i', 'BLOSUM62_NUM_GLN_i', 'BLOSUM62_NUM_ARG_i', 'BLOSUM62_NUM_SER_i', 'BLOSUM62_NUM_THR_i',
  'BLOSUM62_NUM_VAL_i', 'BLOSUM62_NUM_TRP_i', 'BLOSUM62_NUM_TYR_i', 'PHI_SIN_i', 'PHI_COS_i', 'PSI_SIN_i', 'PSI_COS_i', 'CHI1_SIN_i', 'CHI1_COS_i', 
- 'CHI1_EXISTS_i', 'CHI2_SIN_i', 'CHI2_COS_i', 'CHI2_EXISTS_i', 'BLOSUM62_NUM_ALA_i+1', 'BLOSUM62_NUM_CYS_i+1', 'BLOSUM62_NUM_ASP_i+1', 
+ 'CHI1_EXISTS_i', 'ALTCHI1_SIN_i', 'ALTCHI1_COS_i', 'ALTCHI1_EXISTS_i', 
+ 'CHI2_SIN_i', 'CHI2_COS_i', 'CHI2_EXISTS_i', 'ALTCHI2_SIN_i', 'ALTCHI2_COS_i', 'ALTCHI2_EXISTS_i', 'CHI3_SIN_i', 'CHI3_COS_i', 'CHI3_EXISTS_i', 
+ 'CHI4_SIN_i', 'CHI4_COS_i', 'CHI4_EXISTS_i', 'CHI5_SIN_i', 'CHI5_COS_i', 'CHI5_EXISTS_i', 'BLOSUM62_NUM_ALA_i+1', 'BLOSUM62_NUM_CYS_i+1', 'BLOSUM62_NUM_ASP_i+1', 
  'BLOSUM62_NUM_GLU_i+1', 'BLOSUM62_NUM_PHE_i+1', 'BLOSUM62_NUM_GLY_i+1', 'BLOSUM62_NUM_HIS_i+1', 'BLOSUM62_NUM_ILE_i+1', 'BLOSUM62_NUM_LYS_i+1', 
  'BLOSUM62_NUM_LEU_i+1', 'BLOSUM62_NUM_MET_i+1', 'BLOSUM62_NUM_ASN_i+1', 'BLOSUM62_NUM_PRO_i+1', 'BLOSUM62_NUM_GLN_i+1', 'BLOSUM62_NUM_ARG_i+1',
 'BLOSUM62_NUM_SER_i+1', 'BLOSUM62_NUM_THR_i+1', 'BLOSUM62_NUM_VAL_i+1', 'BLOSUM62_NUM_TRP_i+1', 'BLOSUM62_NUM_TYR_i+1', 'PHI_SIN_i+1', 'PHI_COS_i+1',
-'PSI_SIN_i+1', 'PSI_COS_i+1', 'CHI1_SIN_i+1', 'CHI1_COS_i+1', 'CHI1_EXISTS_i+1', 'CHI2_SIN_i+1', 'CHI2_COS_i+1', 'CHI2_EXISTS_i+1', 'O__EXISTS_i-1',
+'PSI_SIN_i+1', 'PSI_COS_i+1', 'CHI1_SIN_i+1', 'CHI1_COS_i+1', 'CHI1_EXISTS_i+1', 'ALTCHI1_SIN_i+1', 'ALTCHI1_COS_i+1', 'ALTCHI1_EXISTS_i+1', 
+ 'CHI2_SIN_i+1', 'CHI2_COS_i+1', 'CHI2_EXISTS_i+1', 'ALTCHI2_SIN_i+1', 'ALTCHI2_COS_i+1', 'ALTCHI2_EXISTS_i+1', 'CHI3_SIN_i+1', 'CHI3_COS_i+1', 'CHI3_EXISTS_i+1', 
+ 'CHI4_SIN_i+1', 'CHI4_COS_i+1', 'CHI4_EXISTS_i+1', 'CHI5_SIN_i+1', 'CHI5_COS_i+1', 'CHI5_EXISTS_i+1', 'O__EXISTS_i-1',
 'O_d_HA_i-1', 'O__COS_A_i-1', 'O__COS_H_i-1', 'HN__EXISTS_i', 'HN_d_HA_i', 'HN__COS_A_i', 'HN__COS_H_i', 'Ha__EXISTS_i', 'Ha_d_HA_i', 'Ha__COS_A_i', 
 'Ha__COS_H_i', 'O__EXISTS_i', 'O_d_HA_i', 'O__COS_A_i', 'O__COS_H_i', 'HN__EXISTS_i+1', 'HN_d_HA_i+1', 'HN__COS_A_i+1', 'HN__COS_H_i+1', 'S2_i-1', 'S2_i',
  'S2_i+1']
 spartap_cols=sp_feat_cols+atom_names+[a+"_RC" for a in atom_names]+["FILE_ID","RESNAME","RES_NUM"]
 col_square=["%s_%s_%s"%(a,b,c) for a in ['PHI','PSI'] for b in ['COS','SIN'] for c in ['i-1','i','i+1']]  
-dropped_cols=["DSSP_%s_%s"%(a,b) for a in ["PHI","PSI"] for b in ['i-1','i','i+1']]+["BMRB_RES_NUM","MATCHED_BMRB","CG","HA2_RING","HA3_RING","RCI_S2","identifier"]
+dropped_cols=["DSSP_%s_%s"%(a,b) for a in ["PHI","PSI"] for b in ['i-1','i','i+1']]+["BMRB_RES_NUM","MATCHED_BMRB","HA2_RING","HA3_RING","RCI_S2","identifier"]
 col_lift=[col for col in sp_feat_cols if "BLOSUM" not in col and "_i-1" not in col and "_i+1" not in col]
-non_numerical_cols=['3_10_HELIX_SS_i',"A_HELIX_SS_i","BEND_SS_i","B_BRIDGE_SS_i","CHI1_EXISTS_i","CHI2_EXISTS_i","HN__EXISTS_i","Ha__EXISTS_i","NONE_SS_i","O__EXISTS_i","PI_HELIX_SS_i","STRAND_SS_i","TURN_SS_i"]+protein_letters
+non_numerical_cols=['3_10_HELIX_SS_i',"A_HELIX_SS_i","BEND_SS_i","B_BRIDGE_SS_i","CHI1_EXISTS_i","ALTCHI1_EXISTS_i", "CHI2_EXISTS_i","ALTCHI2_EXISTS_i", "CHI3_EXISTS_i", "CHI4_EXISTS_i", "CHI5_EXISTS_i","HN__EXISTS_i","Ha__EXISTS_i","NONE_SS_i","O__EXISTS_i","PI_HELIX_SS_i","STRAND_SS_i","TURN_SS_i"]+protein_letters
 
 # These are the names of the columns that are not in Sparta+ but are in the un-augmented features from our extraction
 cols_notinsp = dssp_cols + hse_cols + ext_seq_cols
@@ -599,7 +607,7 @@ def get_chis(data, resname):
     #resname_dict = {'ASN' : [-2, -3, 1, 0, -3], 'HIS' : [-2, -3, 1, 0, -1], 'TRP' : [-3, -2, -4, -3, 1], 'ASP' : [-2, -3, 6, 2, -3], 'LEU' : [-1, -1, -4, -3, 0], 'PHE' : [-2, -2, -3, -3, 6], 'TYR' : [-2, -2, -3, -2, 3], 'VAL' : [0, -1, -3, -2, -1], 'ILE' : [-1, -1, -3, -3, 0]}
     blos = resname_blos_dict[resname]
     if resname == 'VAL':
-        chi_name = 'CHI1_EXISTS_i'
+        chi_name = 'ALTCHI1_EXISTS_i'
     else:
         chi_name = 'CHI2_EXISTS_i'
     dat = data[(data['BLOSUM62_NUM_ALA_i'] == blos[0]) & (data['BLOSUM62_NUM_CYS_i'] == blos[1]) & (data['BLOSUM62_NUM_ASP_i'] == blos[2]) & (data['BLOSUM62_NUM_GLU_i'] == blos[3]) & (data['BLOSUM62_NUM_PHE_i'] == blos[4])]
@@ -611,7 +619,6 @@ def chi2_exist_nums(data, resname):
     nres = len(chis)
     nchis = len(chis[chis < 9])
     return (nres, nchis)
-    
 
 
 bestH_fckwargs = {'activ' : 'prelu', 'lrate' : 0.001, 'mom' : [0.9, 0.999], 'dec' : 1*10**-6, 'epochs' : 500, 'min_epochs' : 50, 'opt_type' : 'adam', 'do' : 0.4, 'reg' : 0*10**-5, 
@@ -621,5 +628,6 @@ bestH_fckwargs = {'activ' : 'prelu', 'lrate' : 0.001, 'mom' : [0.9, 0.999], 'dec
 H_fckwargs = {'activ' : 'tanh', 'lrate' : 0.0001, 'mom' : [0.9, 0.999], 'dec' : 1*10**-6, 'epochs' : 450, 'min_epochs' : 50, 'opt_type' : 'sgd', 'do' : 0.0, 'reg' : 1*10**-6, 
               'reg_type' : 'L2', 'tol' : 3, 'pretrain' : 'PQ', 'bnorm' : False, 'nest' : True, 'lsuv' : False, 'clip_norm' : 0.0, 'clip_val' : 0.0, 'reject_outliers' : None,
               'opt_override' : False, 'noise' : None, 'noise_type': 'percent', 'noise_dist' : 'normal', 'batch_size' : 64, 'lsuv_batch' : 2048}
+
 
 

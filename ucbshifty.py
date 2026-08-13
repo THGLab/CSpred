@@ -53,10 +53,10 @@ paper_order = ['Ala', 'Cys','Asp','Glu','Phe','Gly','His','Ile','Lys','Leu','Met
 paper_order = [i.upper() for i in paper_order]
 
 rc_ala = {}
-rc_ala['N'] = [123.8, 118.7, 120.4, 120.2, 120.3, 108.8, 118.2, 119.9,
+rc_ala['N'] = [123.8, 118.8, 120.4, 120.2, 120.3, 108.8, 118.2, 119.9,
                120.4, 121.8, 119.6, 118.7, np.nan, 119.8, 120.5, 115.7,
                113.6, 119.2, 121.3, 120.3]
-rc_ala['H'] = [8.24, (8.32 + 8.43) / 2, 8.34, 8.42, 8.30, 8.33, 8.42, 8.00,
+rc_ala['H'] = [8.24, 8.32, 8.34, 8.42, 8.30, 8.33, 8.42, 8.00,
                8.29, 8.16, 8.28, 8.40, np.nan, 8.32, 8.23, 8.31, 8.15, 8.03,
                8.25, 8.12]
 rc_ala['HA'] = [4.32, 4.55, 4.71, 4.64, 4.35, 4.62, 3.96, 4.73, 4.17, 4.32,
@@ -65,12 +65,58 @@ rc_ala['HA'] = [4.32, 4.55, 4.71, 4.64, 4.35, 4.62, 3.96, 4.73, 4.17, 4.32,
 rc_ala['C'] = [177.8, 174.6, 176.3, 176.6, 175.8, 174.9, 174.1, 176.4, 176.6,
                177.6, 176.3, 175.2, 177.3, 176.0, 176.3, 174.6, 174.7, 176.3,
                176.1, 175.9]
-rc_ala['CA'] = [52.5, (58.2 + 55.4) / 2, 54.2, 56.6, 57.7, 45.1, 55.0, 61.1,
+rc_ala['CA'] = [52.5, 58.2, 54.2, 56.6, 57.7, 45.1, 55.0, 61.1,
                 56.2, 55.1, 55.4, 53.1, 63.3, 55.7, 56.0, 58.3, 61.8, 62.2,
                 57.5, 57.9]
-rc_ala['CB'] = [19.1, (28 + 41.1) / 2, 41.1, 29.9, 39.6, np.nan, 29, 38.8, 33.1,
+rc_ala['CB'] = [19.1, 28, 41.1, 29.9, 39.6, np.nan, 29, 38.8, 33.1,
                 42.4, 32.9, 38.9, 32.1, 29.4, 30.9, 63.8, 69.8, 32.9, 29.6,
                 38.8]
+
+rc_ala['CG'] =   [np.nan, np.nan, 179.7,  36.3,   138.8,  np.nan, 133.53, np.nan, 24.8,   27.0,   32.1 ,  177.0,  27.4,   33.8,   27.2,   np.nan, np.nan, np.nan, 111.7,  129.69]
+rc_ala['CD'] =   [np.nan, np.nan, np.nan, 183.6,  np.nan, np.nan, np.nan, np.nan, 29.1,   np.nan, np.nan, np.nan, 50.6,   180.3,  43.4,   np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['CD1'] =  [np.nan, np.nan, np.nan, np.nan, 131.7,  np.nan, np.nan, 14.1,   np.nan, 24.9,   np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 127.1,  132.88]
+rc_ala['CD2'] =  [np.nan, np.nan, np.nan, np.nan, 131.7,  np.nan, 119.9,  np.nan, np.nan, 23.5,   np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 126.5, 132.85]
+rc_ala['CE'] =   [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 42.1,   np.nan, 17.0,   np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['CE1'] =  [np.nan, np.nan, np.nan, np.nan, 131.2,  np.nan, 138.5,  np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 118.4]
+rc_ala['CE2'] =  [np.nan, np.nan, np.nan, np.nan, 131.2,  np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 138.9, 118.21]
+rc_ala['CG1'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 27.3,   np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 21.2,   np.nan, np.nan]
+rc_ala['CG2'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 17.5,   np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 21.6,   21.2,   np.nan, np.nan]
+rc_ala['CZ'] =   [np.nan, np.nan, np.nan, np.nan, 129.3,  np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 159.6,  np.nan, np.nan, np.nan, np.nan, 158.64]
+rc_ala['HB'] =   [1.4,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 1.8,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 4.2,    2.0,    np.nan, np.nan]
+rc_ala['HB2'] =  [np.nan, 2.9,    2.7,    2.0,    3.1,    np.nan, 3.2,    np.nan, 1.8,    1.6,    2.1,    2.8,    2.3,    2.1,    1.8,    3.9,    np.nan, np.nan, 3.3,    2.94]
+rc_ala['HB3'] =  [np.nan, 2.9,    2.7,    2.0,    3.1,    np.nan, 3.1,    np.nan, 1.8,    1.6,    2.0,    2.8,    1.9,    2.1,    1.8,    3.9,    np.nan, np.nan, 3.2,    2.78]
+rc_ala['HD1'] =  [np.nan, np.nan, np.nan, np.nan, 7.2,    np.nan, 10.69,  0.8,    np.nan, 0.9,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7.2,    6.91]
+rc_ala['HD2'] =  [np.nan, np.nan, np.nan, np.nan, 7.2,    np.nan, 7.1,    np.nan, 1.7,    0.8,    np.nan, np.nan, 3.6,    np.nan, 3.2,    np.nan, np.nan, np.nan, np.nan, 6.94]
+rc_ala['HD21'] = [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7.6,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['HD22'] = [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 6.9,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['HD3'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 1.7,    np.nan, np.nan, np.nan, 3.6,    np.nan, 3.2,    np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['HE'] =   [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 2.1,    np.nan, np.nan, np.nan, 7.2,    np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['HE1'] =  [np.nan, np.nan, np.nan, np.nan, 7.3,    np.nan, 7.8,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 10.1,   6.69]
+rc_ala['HE2'] =  [np.nan, np.nan, np.nan, np.nan, 7.3,    np.nan, 12.61,  np.nan, 3.0,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 6.69]
+rc_ala['HE21'] = [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7.3,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['HE22'] = [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 6.9,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['HE3'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 3.0,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7.5,    np.nan]
+rc_ala['HG'] =   [np.nan, 1.8,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 1.6,    np.nan, np.nan, np.nan, np.nan, np.nan, 5.7,    np.nan, np.nan, np.nan, np.nan]
+rc_ala['HG1'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 5.6,    0.9,    np.nan, np.nan]
+rc_ala['HG12'] = [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 1.4,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['HG13'] = [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 1.2,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['HG2'] =  [np.nan, np.nan, np.nan, 2.3,    np.nan, np.nan, np.nan, 0.9,    1.4,    np.nan, 2.5,    np.nan, 2.0,    2.4,    1.6,    np.nan, 1.2,    0.9,    np.nan, np.nan]
+rc_ala['HG3'] =  [np.nan, np.nan, np.nan, 2.3,    np.nan, np.nan, np.nan, np.nan, 1.4,    np.nan, 2.5,    np.nan, 2.0,    2.4,    1.6,    np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['HZ'] =   [np.nan, np.nan, np.nan, np.nan, 7.25,   np.nan, np.nan, np.nan, 7.5,    np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['CE3'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 120.8,  np.nan]
+rc_ala['CZ3'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 121.6,  np.nan]
+rc_ala['HZ3'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7.1,    np.nan]
+rc_ala['CH2'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 124.5,  np.nan]
+rc_ala['HH2'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7.2,    np.nan]
+rc_ala['CZ2'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 114.6,  np.nan]
+rc_ala['HZ2'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 7.4,    np.nan]
+rc_ala['ND2'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 112.8,  np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+rc_ala['NE1'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 129.4,  np.nan]
+rc_ala['NE2'] =  [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 177.4, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 112.3,  np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+
+
+
+
 randcoil_ala = {i: dict(zip(paper_order, rc_ala[i])) for i in toolbox.ATOMS}
 # When the residue in question is followed by a Proline, we instead use:
 rc_pro = {}
@@ -89,11 +135,60 @@ rc_pro['CA'] = [50.5, 56.4, 52.2, 54.2, 55.6, 44.5, 53.3, 58.7, 54.2, 53.1,
                 53.3, 51.3, 61.5, 53.7, 54.0, 56.4, 59.8, 59.8, 55.7, 55.8]
 rc_pro['CB'] = [18.1, 27.1, 40.9, 29.2, 39.1, np.nan, 29.0, 38.7, 32.6, 41.7,
                 32.4, 38.7, 30.9, 28.8, 30.2, 63.3, 69.8, 32.6, 28.9, 38.3]
+
+rc_pro['CG']  = rc_ala['CG']
+rc_pro['CD']  = rc_ala['CD']
+rc_pro['CD1'] = rc_ala['CD1']
+rc_pro['CD2'] = rc_ala['CD2']
+rc_pro['CE']  = rc_ala['CE']
+rc_pro['CE1'] = rc_ala['CE1']
+rc_pro['CE2'] = rc_ala['CE2']
+rc_pro['CG1'] = rc_ala['CG1']
+rc_pro['CG2'] = rc_ala['CG2']
+rc_pro['CZ']  = rc_ala['CZ']
+rc_pro['HB']  = rc_ala['HB']
+rc_pro['HB2'] = rc_ala['HB2']
+rc_pro['HB3'] = rc_ala['HB3']
+rc_pro['HD1'] = rc_ala['HD1']
+rc_pro['HD2'] = rc_ala['HD2']
+rc_pro['HD21']= rc_ala['HD21']
+rc_pro['HD22']= rc_ala['HD22']
+rc_pro['HD3'] = rc_ala['HD3']
+rc_pro['HE']  = rc_ala['HE']
+rc_pro['HE1'] = rc_ala['HE1']
+rc_pro['HE2'] = rc_ala['HE2']
+rc_pro['HE21']= rc_ala['HE21']
+rc_pro['HE22']= rc_ala['HE22']
+rc_pro['HE3'] = rc_ala['HE3']
+rc_pro['HG']  = rc_ala['HG']
+rc_pro['HG1'] = rc_ala['HG1']
+rc_pro['HG12']= rc_ala['HG12']
+rc_pro['HG13']= rc_ala['HG13']
+rc_pro['HG2'] = rc_ala['HG2']
+rc_pro['HG3'] = rc_ala['HG3']
+rc_pro['HZ']  = rc_ala['HZ']
+rc_pro['CE3'] = rc_ala['CE3']
+rc_pro['CZ3'] = rc_ala['CZ3']
+rc_pro['HZ3'] = rc_ala['HZ3']
+rc_pro['CH2'] = rc_ala['CH2']
+rc_pro['HH2'] = rc_ala['HH2']
+rc_pro['CZ2'] = rc_ala['CZ2']
+rc_pro['HZ2'] = rc_ala['HZ2']
+rc_pro['ND2']  = rc_ala['ND2']
+rc_pro['NE1']  = rc_ala['NE1']
+rc_pro['NE2']  = rc_ala['NE2']
+
+
+
+
+
+
+
 randcoil_pro = {i: dict(zip(paper_order, rc_pro[i])) for i in toolbox.ATOMS}
 
 EXTERNAL_MAPPINGS = {"HIE":"HIS","HID":"HIS","HIP":"HIS","CAS":"CYS","CSD":"CYS","MSE":"MET","CSO":"CYS"}
 
-SS_CAPS = {"H": 3.7, "HA": 3, "C": 10, "CA": 11.25, "CB": 20, "N": 22}
+SS_CAPS = {"H": 3.7, "HA": 3, "C": 10, "CA": 11.25, "CB": 20, "N": 22, "CG": np.nan, 'CD': np.nan, 'CD1': np.nan, 'CD2': np.nan, 'CE': np.nan, 'CE1': np.nan, 'CE2': np.nan, 'CG1': np.nan, 'CG2': np.nan, 'CZ': np.nan, 'HB': np.nan, 'HB2': np.nan, 'HB3': np.nan, 'HD1': np.nan, 'HD2': np.nan, 'HD21': np.nan, 'HD22': np.nan, 'HD3': np.nan, 'HE': np.nan, 'HE1': np.nan, 'HE2': np.nan, 'HE21': np.nan, 'HE22': np.nan, 'HE3': np.nan, 'HG': np.nan, 'HG1': np.nan, 'HG12': np.nan, 'HG13': np.nan, 'HG2': np.nan, 'HG3': np.nan, 'HZ': np.nan, 'CE3': np.nan, 'CZ3': np.nan, 'HZ3': np.nan, 'CH2': np.nan, 'HH2': np.nan, 'CZ2': np.nan, 'HZ2': np.nan, 'ND2': np.nan,'NE1': np.nan,'NE2': np.nan}
 
 def read_sing_chain_PDB(path,fix_unknown_res=True,remove_alternate_res=True):
     '''
@@ -103,10 +198,15 @@ def read_sing_chain_PDB(path,fix_unknown_res=True,remove_alternate_res=True):
     '''
     parser=PDB.PDBParser()
     struc=parser.get_structure("query",path)
+    #print(path)
     if len(struc)>1:
         print("Multiple models exist in this pdb file! Only the first model is taken.")
     struc=struc[0]
-    assert len(struc)==1,"Multiple chains exist in this pdb file!"
+    try:
+        assert len(struc) == 1
+    except AssertionError:
+        print("Multiple chains exist in this pdb file! Skipping...")
+    
     chain=struc.child_list[0]
     if fix_unknown_res:
         deletion=[]
@@ -678,6 +778,7 @@ if __name__=="__main__":
     args=args.parse_args()
     result=main(args.input,strict=args.strict,secondary=args.secondary,test=args.test,exclude=args.exclude,shifty=args.shifty)  
     result.to_csv(args.output,index=None)
+
 
 
 

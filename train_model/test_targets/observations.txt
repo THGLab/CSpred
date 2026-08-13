@@ -1,1 +1,0 @@
-* 1PHP_ 189[PHE] C shifts corrected to 175.08 from 87.63 because the shifts in BMRB16447 is too erroneous (0.18)

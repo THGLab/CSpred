@@ -125,7 +125,9 @@ def combine_shift(df,atom,shift_pred_path):
             merged_df[(merged_df["RESNAME"]!=merged_df["RESNAME1"])]["SHIFTY_"+atom]=np.nan
         merged_df.drop("RESNAME1",axis=1,inplace=True)
         new_df_singles.append(merged_df)
+    
     new_df=pd.concat(new_df_singles,ignore_index=True)
+    
     return new_df
 
 

@@ -6,6 +6,7 @@
 
 import numpy as np
 import pandas as pd
+pd.options.mode.chained_assignment = None  # default='warn'
 from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
 from sklearn.model_selection import train_test_split,KFold
 import joblib
@@ -16,14 +17,17 @@ sys.path.append("../")
 import toolbox
 from data_prep_functions import *
 
+
+
 K = 10
-PARALLEL_JOBS = 12
+PARALLEL_JOBS = 16
 DEBUG = False
 rmse = lambda x: np.sqrt(np.mean(np.square(x)))
 
 MODEL_SAVE_PATH = "../models/"
 DATASET_PATH = "../datasets/"
 Y_PRED_PATH = "Y_preds/"
+
 
 def prep_feat_target(data,atom,task_type,filter_outlier=False,notnull=True):
     '''
@@ -44,16 +48,53 @@ def prep_feat_target(data,atom,task_type,filter_outlier=False,notnull=True):
         filtered=(data[atom]>mean+5*std)|(data[atom]<mean-5*std)
         data=data[np.logical_not(filtered)]
         print("%d residues filtered because they exceeded 5 standard deviations"%np.sum(filtered))
+
+        
+    
+    # filter outlayers
+    hydrogenatoms = ['HB', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ', 'HE3', 'HZ3' ,'HH2', 'HZ2', 'HA', 'H'] 
+    carbonatoms = ['CG','CD', 'CD1', 'CD2', 'CE', 'CE1', 'CE2', 'CG1', 'CG2', 'CZ', 'CE3', 'CZ3', 'CH2', 'CA', 'CB', 'C', 'CZ2']
+    nitrogenatoms = ['N','ND2','NE1','NE2'] 
+    
+
+    if atom  in hydrogenatoms:
+        for aa in range(len(toolbox.AMINOACIDS)):
+            rows_before_drop = data.shape[0] 
+            data.drop(data[((data[atom] < -6) | (data[atom] > 6)) & (data['RESNAME'] == toolbox.AMINOACIDS[aa])].index, inplace=True)
+            rows_after_drop = data.shape[0] 
+            rows_dropped = rows_before_drop - rows_after_drop
+            print(f"{rows_dropped} residues filtered for aa={toolbox.AMINOACIDS[aa]} and atom={atom}.")
+
+                
+    elif atom in carbonatoms:
+        for aa in range(len(toolbox.AMINOACIDS)):
+            rows_before_drop = data.shape[0]
+            data.drop(data[((data[atom] < -12) | (data[atom] > 12)) & (data['RESNAME'] == toolbox.AMINOACIDS[aa])].index, inplace=True)
+            rows_after_drop = data.shape[0] 
+            rows_dropped = rows_before_drop - rows_after_drop
+            print(f"{rows_dropped} residues filtered for aa={toolbox.AMINOACIDS[aa]} and atom={atom}.")
+
+ 
+    elif atom in nitrogenatoms:
+        for aa in range(len(toolbox.AMINOACIDS)):
+            if toolbox.AMINOACIDS[aa] in ['HIS']:
+                data.drop(data[(data['RESNAME'] == toolbox.AMINOACIDS[aa])].index, inplace=True)
+
+   
+
+    
     data.fillna(0,inplace=True)
     data=combine_shift(data,atom,Y_PRED_PATH) 
     # Subtract random coils for SHIFTY predictions
     data["SHIFTY_" + atom] = data["SHIFTY_" + atom] - data["RCOIL_" + atom]
-    features = data.drop([atom,"FILE_ID","RESNAME","RES_NUM","RCOIL_" + atom], axis=1)
+    features = data.drop([atom,"RESNAME","FILE_ID","RESNAME","RES_NUM","RCOIL_" + atom], axis=1)
+    
     print("Shape of features:",features.shape)
     targets = data[atom]
     meta=data[["FILE_ID","RESNAME","RES_NUM"]]
     return features,targets,meta
     
+
 def data_preprocessing(data):
     '''
     Function for executing all the preprocessing steps based on the original extracted features, including fixing HA2/HA3 ring current ambiguity, adding hydrophobicity, powering features, drop unnecessary columns, etc.
@@ -62,6 +103,15 @@ def data_preprocessing(data):
         data - the dataframe after preprocessing (pandas.DataFrame)
     '''
     data=data.copy()
+      
+    # ASN/GLN amiguity
+    condition = (data['HD22'] - data['HD21']) >= 0.4
+    condition1 = (data['HE22'] - data['HE21']) >= 0.42
+    data.loc[condition, ['HD21', 'HD22']] = data.loc[condition, ['HD22', 'HD21']].values
+    data.loc[condition1, ['HE21', 'HE22']] = data.loc[condition1, ['HE22', 'HE21']].values
+
+
+    
     data = data.rename(index=str, columns=sparta_rename_map) 
     data=data[sorted(data.columns)]
     data=ha23ambigfix(data, mode=0)
@@ -71,9 +121,12 @@ def data_preprocessing(data):
     Add_res_spec_feats(data,include_onehot=False)
     data=feat_pwr(data,hbondd_cols+cos_cols,[2])
     data=feat_pwr(data,hbondd_cols,[-1,-2,-3])
-    dropped_cols=dssp_pp_cols+dssp_energy_cols+['Unnamed: 0', 'Unnamed: 0.1', 'Unnamed: 0.1.1',  'PDB_FILE_NAME',"RES", 'CHAIN', 'RESNAME_ip1', 'RESNAME_im1', 'BMRB_RES_NUM', 'CG', 'RCI_S2', 'MATCHED_BMRB',"identifier"]+["RESNAME_i%s%d"%(a,b) for a in ['+','-'] for b in range(1,21)]
-    data=data.drop(set(dropped_cols)&set(data.columns),axis=1)
+    dropped_cols=dssp_pp_cols+dssp_energy_cols+['RES_NUM_x', 'RES_NUM_y','FILE_ID_x','FILE_ID_y','Unnamed: 0', 'Unnamed: 0.1', 'Unnamed: 0.1.1',  'PDB_FILE_NAME',"RES", 'CHAIN', 'RESNAME_ip1', 'RESNAME_im1', 'BMRB_RES_NUM', 'RCI_S2', 'MATCHED_BMRB',"identifier"]+["RESNAME_i%s%d"%(a,b) for a in ['+','-'] for b in range(1,21)]
+    data=data.drop(set(dropped_cols)&set(data.columns),axis=1)        
+    
+
     return data
+
 
 def prepare_data_for_atom(data,atom):
     '''
@@ -86,16 +139,56 @@ def prepare_data_for_atom(data,atom):
     returns:
         pandas.DataFrame containing the cleaned feature set
     '''
+    
     dat=data.copy()
+    
+    column_names = dat.columns.tolist()
+    new_column_names = [name.replace('.1', '') if name.endswith('.1') else name for name in column_names]
+    dat.columns = new_column_names
+
+    
     ring_col = atom + '_RC'
     rem1 = ring_cols.copy()
     rem1.remove(ring_col)
-    rem2 = toolbox.ATOMS.copy()
-    rem2.remove(atom)
+    
+    rem2 = [rm_atom + "_RING" for rm_atom in ['C', 'CA', 'CB', 'N', 'HA', 'HA2', 'HA3', 'H', '1H', '1HA', '2HA','CG','CD', 'CD1', 'CD2', 'CE', 'CE1', 'CE2', 'CG1', 'CG2', 'CZ','HB', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HE3', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ','CE3','CZ3','HZ3','CH2','HH2','CZ2','HZ2', 'HB1', 'HD11', 'HD12', 'HD13', 'HD23', 'HG11', 'HZ1', 'HG21', 'HG22', 'HG23', 'ND2','NE1','NE2']]
     rem3 = ["RCOIL_" + rm_atom for rm_atom in toolbox.ATOMS if rm_atom != atom]
-    dat = dat.drop(rem1 + rem2 + rem3, axis=1)
+    rem4 = [rm_atom + "_EFIELD" for rm_atom in ['HA2', 'HA3', 'HA', 'H', 'HB', 'HB1', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HG', 'HG1', 'HG11', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ','HD11', 'HD12', 'HD13', 'HD23', 'HE3','HZ3','HH2','HZ2', 'HZ1', 'HG21', 'HG22', 'HG23', 'HZ1', 'HZ2', 'HZ3', 'ND2','NE1','NE2','N'] if rm_atom != atom]
+    rem5 = [rm_atom + "_dHA" for rm_atom in ['HB', 'HB1', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ', 'HD11', 'HD12', 'HD13', 'HD23', 'HE3','HZ3','HH2','HZ2', 'HZ1', 'HG21', 'HG22', 'HG23', 'HG'] if rm_atom != atom]
+    rem6 = [rm_atom + "_COS_H" for rm_atom in ['HB', 'HB1', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ', 'HD11', 'HD12', 'HD13', 'HD23', 'HE3','HZ3','HH2','HZ2', 'HZ1', 'HG21', 'HG22', 'HG23', 'HG'] if rm_atom != atom]
+    rem7 = [rm_atom + "_COS_A" for rm_atom in ['HB', 'HB1', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ', 'HD11', 'HD12', 'HD13', 'HD23', 'HE3','HZ3','HH2','HZ2', 'HZ1', 'HG21', 'HG22', 'HG23', 'HG'] if rm_atom != atom]
+    rem8 = [rm_atom + "_EXISTS" for rm_atom in ['HB', 'HB1', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ','HD11', 'HD12', 'HD13', 'HD23', 'HE3','HZ3','HH2','HZ2', 'HZ1', 'HG21', 'HG22', 'HG23', 'HG'] if rm_atom != atom]
+    rem9 = [rm_atom + "_ENERGY" for rm_atom in ['HB', 'HB1', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ','HD11', 'HD12', 'HD13', 'HD23', 'HE3','HZ3','HH2','HZ2', 'HZ1', 'HG21', 'HG22', 'HG23', 'HG'] if rm_atom != atom]
+    
+    rem10 = toolbox.ATOMS.copy() 
+    rem10.remove(atom)
+    
+    dat = dat.drop(rem1 + rem2 + rem3 + rem4 + rem5 + rem6 + rem7 + rem8 + rem9 + rem10, axis=1, errors='ignore')
+    
+    hbondd_sidechain_cols = [i+j for i in ['HB', 'HB1', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ','HD11', 'HD12', 'HD13', 'HD23', 'HE3','HZ3','HH2','HZ2', 'HZ1', 'HG21', 'HG22', 'HG23']  for j in ['_dHA', '_COS_H', '_COS_A']]
+    hbondd_sidechain_cols = [element for element in hbondd_sidechain_cols if element.startswith(atom + '_')]
+    #add polynomial transformation of side chain hbonds
+    dat = dat.loc[:, ~dat.columns.duplicated()]
+    dat=feat_pwr(dat,hbondd_sidechain_cols,[-1,-2,-3])
+    dat=feat_pwr(dat,hbondd_sidechain_cols,[2])
+
+    # filter if too little data
+    little = {
+        "HD2":["ASP"]}
+    
+    if atom in little:
+        resnames = little[atom]  # Get the list of corresponding residue names for the selected atom
+        dat.loc[dat['RESNAME'].isin(resnames), atom] = np.nan
+
     dat[ring_col] = dat[ring_col].fillna(value=0)
+
+    dat = dat.loc[:, ~dat.columns.duplicated()]
+     
     return dat
+
+
+
+
 
 def evaluate(preds,targets,metas):
     '''
@@ -128,7 +221,7 @@ def combine_shift(df,atom,shift_pred_path):
     for pdbid in set(df["FILE_ID"]):
         pdb_idx=df["FILE_ID"]==pdbid
         pdb_df=df[pdb_idx].copy()
-        shift_pred_file=[file for file in os.listdir(shift_pred_path) if pdbid in file]
+        shift_pred_file=[file for file in os.listdir(shift_pred_path) if str(pdbid) in file]
         if not len(shift_pred_file)==1:
             # Only combine SHIFTY++ predictions when there is exactly one match
             print("Unexpected number of shift files for %s:%d"%(pdbid,len(shift_pred_file)))
@@ -158,7 +251,6 @@ def combine_shift(df,atom,shift_pred_path):
         new_df_singles.append(merged_df)
     new_df=pd.concat(new_df_singles,ignore_index=True)
     return new_df
-
 
 
 def train_with_test(features,targets,train_idx,test_idx):
@@ -191,7 +283,10 @@ def train_for_atom(atom, dataset):
     '''
     print("  ======  Training model for:",atom, "  ======  ")
     single_atom_data = prepare_data_for_atom(train_data, atom)
-    features,targets,metas = prep_feat_target(single_atom_data,atom,"train",filter_outlier=True,notnull=True)
+    #print(single_atom_data.columns.tolist())
+    features,targets,metas = prep_feat_target(single_atom_data,atom,"train",filter_outlier=False,notnull=True)
+    
+    
     kf=KFold(n_splits=K,shuffle=True)
     # Prepare parameters for Kfold in a list and do "out-of-sample" training and testing on training dataset for K folds
     print("Training R0 to provide OOB predictions as features for R1 and R2...")
@@ -224,6 +319,8 @@ def train_for_atom(atom, dataset):
     if not DEBUG:
         joblib.dump(R0,MODEL_SAVE_PATH+"%s_R0.sav"%atom)
 
+
+
     # Train and save second level model  (R1)
     print("Training UCBShift-X with %d examples..."%len(features))
     R1=RandomForestRegressor(bootstrap=False, max_features=0.5, min_samples_leaf=7, min_samples_split=12, n_estimators=500,n_jobs = PARALLEL_JOBS)
@@ -232,6 +329,9 @@ def train_for_atom(atom, dataset):
     R1.fit(R1_x,R1_y)
     if not DEBUG:
         joblib.dump(R1,MODEL_SAVE_PATH+"%s_R1.sav"%atom)
+
+
+
 
     # Train and save second level model with UCBShift-Y predictions (R2)
     R2=RandomForestRegressor(bootstrap=False, max_features=0.5, min_samples_leaf=7, min_samples_split=12, n_estimators=500,n_jobs = PARALLEL_JOBS)
@@ -247,12 +347,21 @@ def train_for_atom(atom, dataset):
 
     print("Finish for",atom)
 
+
+
+
+
+
 if __name__=="__main__":
     if not os.path.exists(MODEL_SAVE_PATH):
         os.mkdir(MODEL_SAVE_PATH)
     print("  ======  Reading all datasets  ======  ")
     train_data = pd.concat([pd.read_csv(DATASET_PATH+single_df) for single_df in os.listdir(DATASET_PATH)],ignore_index=True)
     train_data = data_preprocessing(train_data)
+    
     for atom in toolbox.ATOMS:
         train_for_atom(atom,train_data)
+    
     print("All done!")
+
+

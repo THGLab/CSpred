@@ -18,12 +18,13 @@ DOWNLOAD_DIR = "pdbs/"
 AMINO_ACIDS = [aa.upper() for aa in IUPACData.protein_letters_3to1]
 
 WHITELIST = AMINO_ACIDS + ["HOH"]   # Download structure with protein and water
-# WHITELIST = AMINO_ACIDS   # Download only protein, no water no ligands
-# WHITELIST = None   # Download everything, including protein, water and ligands
+#WHITELIST = AMINO_ACIDS   # Download only protein, no water no ligands
+#WHITELIST = None   # Download everything, including protein, water and ligands
 
 all_training_pdbs = pd.read_csv("all_training.csv")
 all_testing_pdbs = pd.read_csv("all_testing.csv")
 all_pdbs = pd.concat([all_training_pdbs , all_testing_pdbs] , ignore_index=True)
+
 
 # Make sure there is a folder to store PDBS
 if not os.path.exists(DOWNLOAD_DIR):

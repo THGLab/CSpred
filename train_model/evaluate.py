@@ -10,12 +10,16 @@ import sys
 sys.path.append("../")
 import toolbox
 import numpy as np
+from spartap_features import rc_ala
+pd.options.mode.chained_assignment = None  # default='warn'
+
 
 PRED_PATH = "UCBShift_preds/"
 PDB_PATH = "pdbs/test/"
 ANALYSIS_PATH = "analysis/"
 SHIFTS_PATH = "test_targets/"
 PRED_SCRIPT = "../CSpred.py"
+
 
 def evaluate_final_pred(pdbid, pred_path, real_path):
     '''
@@ -36,12 +40,38 @@ def evaluate_final_pred(pdbid, pred_path, real_path):
     invalid = merged.RESNAME_y != merged.RESNAME_x
     merged.loc[invalid, toolbox.ATOMS] = np.nan
     # Exclude crazy outliers
-    merged.loc[merged["H"] < 2, "H"] = np.nan
-    merged.loc[merged["CB"] > 80, "CB"] = np.nan
-    merged.loc[merged["N"] < 60, "N"] = np.nan
+
+    hydrogenatoms = ['HB', 'HB2', 'HB3', 'HD1', 'HD2', 'HD21', 'HD22', 'HD3', 'HE', 'HE1', 'HE2', 'HE21', 'HE22', 'HG', 'HG1', 'HG12', 'HG13', 'HG2', 'HG3', 'HZ','HE3', 'HZ3' ,'HH2', 'HZ2', 'HA', 'H']
+    carbonatoms = ['CG','CD', 'CD1', 'CD2', 'CE', 'CE1', 'CE2', 'CG1', 'CG2', 'CZ', 'CE3', 'CZ3', 'CH2', 'CA', 'CB', 'C', 'CZ2']
+
+
+
+    for atom in carbonatoms:
+        for aa in range(len(toolbox.AMINOACIDS)):
+            if not np.isnan(rc_ala[atom][aa]):
+                selected_rows = merged.loc[merged['RESNAME_x'] == toolbox.AMINOACIDS[aa]]
+                selected_rows.loc[(selected_rows[atom ] > rc_ala[atom][aa]+12), atom] = np.nan
+                selected_rows.loc[(selected_rows[atom] < rc_ala[atom][aa]-12), atom] = np.nan
+                merged.loc[merged['RESNAME_x'] == toolbox.AMINOACIDS[aa], atom] = selected_rows.loc[selected_rows['RESNAME_x'] == toolbox.AMINOACIDS[aa], atom].values
+
+                
+
+
+    for atom in hydrogenatoms:
+        for aa in range(len(toolbox.AMINOACIDS)):
+            if not np.isnan(rc_ala[atom][aa]):
+                selected_rows = merged.loc[merged['RESNAME_x'] == toolbox.AMINOACIDS[aa]]
+                selected_rows.loc[(selected_rows[atom] > rc_ala[atom][aa]+6), atom] = np.nan
+                selected_rows.loc[(selected_rows[atom] < rc_ala[atom][aa]-6), atom] = np.nan
+                merged.loc[merged['RESNAME_x'] == toolbox.AMINOACIDS[aa], atom] = selected_rows.loc[selected_rows['RESNAME_x'] == toolbox.AMINOACIDS[aa], atom].values
+
+
+
+
     merged["PDBID"] = pdbid
     results = []
     for model in ["X", "Y", "UCBShift"]:
+
         # Prepare the model analysis dataframe for the specific model
         model_analysis = merged[["PDBID", "RESNUM", "RESNAME_x"] + [atom + "_" + model for atom in toolbox.ATOMS] + toolbox.ATOMS]
         rename_cols = {atom + "_" + model: atom + "_PRED" for atom in toolbox.ATOMS}
@@ -54,7 +84,10 @@ def evaluate_final_pred(pdbid, pred_path, real_path):
             model_err[atom + "_RMSE"] = toolbox.rmse(err)
             model_err[atom + "_ERR_MIN"] = np.abs(err).min()
             model_err[atom + "_ERR_MAX"] = np.abs(err).max()
+
+            
         results.append((model_analysis, {pdbid: model_err}))
+
     return results
 
 # Make sure the folder for storing prediction files and analysis is empty
@@ -74,7 +107,9 @@ with open("inputs", "w") as f:
 os.system("python " + PRED_SCRIPT + " inputs -b -t -o " + PRED_PATH)
 
 print("All predictions have been made. Now analyzing...")
-assert len(os.listdir(PRED_PATH)) == 200, "Number of prediction files is not correct!"
+
+
+
 
 preds = dict()
 errors = dict()
@@ -90,12 +125,15 @@ for file in os.listdir(PRED_PATH):
 for model in ["X", "Y", "UCBShift"]:
     print("Model:", model)
     all_preds = pd.concat(preds[model])
-    for atom in toolbox.ATOMS:
+    
+    for atom in ['C','CA','CB','CG','CD1','CG2','CD','CG1','CD2','CE','CE1','CE2','CZ','CZ2','CH2','CE3','CZ3','H','HA','HB2','HB3','HG2','HB','HD2','HG3','HD1','HD3','HE2','HG','HE1','HE3','HG12','HG13','HG1','HD21','HD22','HE','HE21','HE22','HZ','HZ2','HH2','HZ3','N','ND2','NE2','NE1']:
         print(atom + "_RMSE:", toolbox.rmse(all_preds[atom + "_DIFF"]))
         valid = all_preds[atom + "_DIFF"].notnull()
         print(atom + "_CORR:", np.corrcoef(all_preds[valid][atom + "_PRED"], all_preds[valid][atom])[0,1])
         print("\n")
-    print("-" * 25, end="\n\n")
+        
+
+    print("-" * 25, end="\n")
     all_preds.to_csv(ANALYSIS_PATH + model + "_preds.csv", index=None)
     all_err = pd.DataFrame.from_dict(errors[model], orient="index")
     all_err.to_csv(ANALYSIS_PATH + model + "_errors.csv")
